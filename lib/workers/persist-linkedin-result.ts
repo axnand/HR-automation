@@ -149,6 +149,9 @@ export async function persistLinkedInResult(args: {
       });
     }
 
+    const candidateName =
+      [profileData.first_name, profileData.last_name].filter(Boolean).join(" ") || null;
+
     await tx.task.update({
       where: { id: taskId },
       data: {
@@ -156,6 +159,7 @@ export async function persistLinkedInResult(args: {
         result: profileJson,
         analysisResult: analysisResultJson,
         accountId,
+        candidateName,
         // P1 #37 / EC-13.1 — explicit analysis sub-state. OK when we have a
         // parsed result; PENDING when analysis was skipped (no JD configured),
         // so the recruiter UI can distinguish "analyzed clean" from "analysis

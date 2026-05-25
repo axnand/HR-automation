@@ -58,6 +58,7 @@ export async function POST(
           status: "DONE",
           errorMessage: null,
           result: JSON.stringify(manualProfile),
+          candidateName: name.trim() || null,
           // We clear analysisResult so the background evaluator runs if we enqueue it?
           // Actually, if we set status = DONE, the evaluator will NOT run unless it's sent to process-task?
           // No, if status is DONE, the evaluator script (poll-tasks) picks it up if analysisResult is null!

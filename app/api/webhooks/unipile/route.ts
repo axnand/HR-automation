@@ -128,8 +128,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  console.log(`[Webhook/Unipile] event=${event.type} data=${JSON.stringify(event.data)}`);
-
   // P2 #7 / EC-3.5 / EC-6.2 — per-event-type dedupe key extraction. The
   // previous implementation walked a generic fallback chain
   // (event_id ?? message_id ?? invitation_id ?? id), which could pick a
@@ -137,6 +135,7 @@ export async function POST(req: NextRequest) {
   // unrelated chat-level event later. Each event type has a known ID field;
   // pick the right one explicitly so distinct events never share dedupe keys.
   const eventId = extractDedupeId(event.type, event.data);
+  console.log(`[Webhook/Unipile] event=${event.type} eventId=${eventId ?? "none"}`);
 
   const isDuplicate = !(await dedupeEvent("unipile", event.type, eventId ? `${event.type}:${eventId}` : null));
   if (isDuplicate) {
@@ -213,7 +212,7 @@ async function handleInvitationAccepted(data: any) {
 async function handleThreadInviteAccepted(threadId: string): Promise<void> {
   const thread = await prisma.channelThread.findUnique({
     where: { id: threadId },
-    select: { id: true, taskId: true, status: true, providerState: true },
+    select: { id: true, taskId: true, status: true, providerState: true, task: { select: { candidateName: true } } },
   });
   if (!thread) return;
 
@@ -243,7 +242,8 @@ async function handleThreadInviteAccepted(threadId: string): Promise<void> {
   if (res.count === 0) return;
 
   await recomputeTaskStage(thread.taskId, { source: "WEBHOOK" });
-  console.log(`[Webhook/Unipile] Thread ${threadId.slice(-6)} → CONNECTED`);
+  const cLabel = thread.task.candidateName ?? `taskId:${thread.taskId.slice(-8)}`;
+  console.log(`[Webhook/Unipile] "${cLabel}" invite accepted → CONNECTED (taskId=${thread.taskId})`);
 }
 
 async function findThreadByProviderUserId(
@@ -343,7 +343,7 @@ async function handleNewMessage(data: any) {
         ? { channel: { sendingAccount: { accountId: accountIdFromPayload } } }
         : {}),
     },
-    select: { id: true, taskId: true },
+    select: { id: true, taskId: true, task: { select: { candidateName: true } } },
   });
 
   if (threads.length === 0) {
@@ -382,12 +382,13 @@ async function handleNewMessage(data: any) {
         });
         const t = await prisma.channelThread.findUnique({
           where: { id: fallback.id },
-          select: { id: true, taskId: true },
+          select: { id: true, taskId: true, task: { select: { candidateName: true } } },
         });
         if (t) {
           await markThreadReplied(t.id, t.taskId);
           await recomputeTaskStage(t.taskId, { source: "WEBHOOK" });
-          console.log(`[Webhook/Unipile] Backfilled out-of-order reply: thread ${t.id.slice(-6)} (chatId=${chatId}, senderProviderId=${senderProviderId}) → REPLIED`);
+          const cLabel = t.task.candidateName ?? `taskId:${t.taskId.slice(-8)}`;
+          console.log(`[Webhook/Unipile] "${cLabel}" replied via LinkedIn (backfill/out-of-order chatId=${chatId} taskId=${t.taskId})`);
           return;
         }
       }
@@ -400,7 +401,8 @@ async function handleNewMessage(data: any) {
   for (const t of threads) {
     await markThreadReplied(t.id, t.taskId);
     await recomputeTaskStage(t.taskId, { source: "WEBHOOK" });
-    console.log(`[Webhook/Unipile] Thread ${t.id.slice(-6)} → REPLIED (chatId=${chatId})`);
+    const cLabel = t.task.candidateName ?? `taskId:${t.taskId.slice(-8)}`;
+    console.log(`[Webhook/Unipile] "${cLabel}" replied via LinkedIn (chatId=${chatId} taskId=${t.taskId})`);
   }
   if (threads.length > 1) {
     console.log(`[Webhook/Unipile] new_message: ${threads.length} threads matched chatId=${chatId} — all marked REPLIED`);
@@ -433,7 +435,7 @@ async function handleMailReceived(data: any) {
         ? { channel: { sendingAccount: { accountId: accountIdFromPayload } } }
         : {}),
     },
-    select: { id: true, taskId: true },
+    select: { id: true, taskId: true, task: { select: { candidateName: true } } },
   });
 
   if (threads.length === 0) {
@@ -444,6 +446,7 @@ async function handleMailReceived(data: any) {
   for (const t of threads) {
     await markThreadReplied(t.id, t.taskId);
     await recomputeTaskStage(t.taskId, { source: "WEBHOOK" });
-    console.log(`[Webhook/Unipile] Email thread ${t.id.slice(-6)} → REPLIED`);
+    const cLabel = t.task.candidateName ?? `taskId:${t.taskId.slice(-8)}`;
+    console.log(`[Webhook/Unipile] "${cLabel}" replied via email (taskId=${t.taskId})`);
   }
 }

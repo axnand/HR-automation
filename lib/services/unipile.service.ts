@@ -66,7 +66,7 @@ export function formatWhatsAppId(phone: string): string {
 function resolveDsnAndKey(accountDsn?: string, accountApiKey?: string) {
   const rawDsn = (accountDsn || process.env.UNIPILE_DSN)?.trim();
   const dsn = rawDsn && !rawDsn.startsWith("http") ? `https://${rawDsn}` : rawDsn;
-  const apiKey = accountApiKey || process.env.UNIPILE_API_KEY;
+  const apiKey = (accountApiKey || process.env.UNIPILE_API_KEY)?.trim();
   if (!dsn || !apiKey) {
     throw new Error("Unipile DSN and API key must be provided (via account or environment)");
   }

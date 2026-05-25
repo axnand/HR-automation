@@ -224,6 +224,10 @@ model Task {
   // manualStage wins over the auto-derived rollup for terminal recruiter decisions
   manualStage    CandidateStage?
   stageUpdatedAt DateTime        @default(now())
+  // Denormalized from result JSON (first_name + last_name) for cheap log labels.
+  // Nullable — failed scrapes never get a name. Set in persist-linkedin-result.ts
+  // and manual-entry route; backfilled by scripts/backfill-candidate-name.ts.
+  candidateName  String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?

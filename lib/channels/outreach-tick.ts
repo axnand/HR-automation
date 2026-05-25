@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { processThread, markThreadReplied } from "@/lib/channels/thread-worker";
 import { listSentInvitations, listChatMessages } from "@/lib/services/unipile.service";
 import { recomputeTaskStage } from "@/lib/channels/stage-rollup";
+import { buildVars } from "@/lib/outreach/render-template";
 
 const MAX_PER_TICK = 200;
 const RETRY_DELAY_MS = 5 * 60 * 1000;
@@ -68,8 +69,15 @@ export async function runOutreachTick(): Promise<{
       await processThread(threadId);
       processed++;
     } catch (err: any) {
-      console.error(`[OutreachTick] Thread ${threadId} failed: ${err.message}`);
       failed++;
+      // Fetch candidateName for a useful error log — on the failure path an extra
+      // query is fine since this is already an exceptional case.
+      const failedTask = await prisma.task.findFirst({
+        where: { channelThreads: { some: { id: threadId } } },
+        select: { id: true, candidateName: true },
+      }).catch(() => null);
+      const cLabel = failedTask?.candidateName ?? `threadId:${threadId.slice(-8)}`;
+      console.error(`[OutreachTick] "${cLabel}" failed (taskId=${failedTask?.id ?? "?"} threadId=${threadId}): ${err.message}`);
       await prisma.channelThread
         .updateMany({
           where: {
@@ -84,10 +92,12 @@ export async function runOutreachTick(): Promise<{
 
   console.log(`[OutreachTick] Done — processed=${processed} failed=${failed}`);
 
-  const pollAccepted = await pollJobInviteAcceptances();
-  const pollReplied = await pollChatReplies();
+  // Neither pollJobInviteAcceptances nor pollChatReplies are called here.
+  // Both hit Unipile/LinkedIn APIs and would fire ~2 800+ times/day if run
+  // on the 30 s tick. They are driven by /api/cron/poll-acceptances (cron-job.org,
+  // once daily) which runs both in sequence as a single safe fallback sweep.
 
-  return { processed, failed, total: claimedIds.length, pollAccepted, pollReplied };
+  return { processed, failed, total: claimedIds.length, pollAccepted: 0, pollReplied: 0 };
 }
 
 // Exported for the on-demand "Check Acceptances" button in the recruiter UI.
@@ -111,7 +121,7 @@ export async function pollJobInviteAcceptances(requisitionId?: string): Promise<
       id: true,
       taskId: true,
       candidateProviderId: true,
-      task: { select: { result: true } },
+      task: { select: { result: true, analysisResult: true, candidateName: true } },
       // EC-9.3: prefer thread's sticky account; fall back to channel default.
       account: { select: { accountId: true, dsn: true, apiKey: true } },
       channel: {
@@ -181,10 +191,15 @@ export async function pollJobInviteAcceptances(requisitionId?: string): Promise<
           },
         });
         await recomputeTaskStage(thread.taskId);
-        console.log(`[OutreachTick] pollInviteAcceptances: Thread ${thread.id.slice(-6)} → CONNECTED`);
+        const profile = thread.task.result ? JSON.parse(thread.task.result as string) : {};
+        const analysis = thread.task.analysisResult ? JSON.parse(thread.task.analysisResult as string) : {};
+        const vars = buildVars(profile, analysis);
+        const candidateName = vars.name || thread.id.slice(-6);
+        console.log(`[OutreachTick] pollInviteAcceptances: "${candidateName}" accepted invite → CONNECTED`);
         accepted++;
       } catch (err: any) {
-        console.warn(`[OutreachTick] pollInviteAcceptances: error for thread ${thread.id}: ${err.message}`);
+        const cLabel = thread.task.candidateName ?? `taskId:${thread.taskId.slice(-8)}`;
+        console.warn(`[OutreachTick] pollInviteAcceptances: error for "${cLabel}" (threadId=${thread.id}): ${err.message}`);
       }
     }
   }
@@ -204,7 +219,7 @@ export async function pollJobInviteAcceptances(requisitionId?: string): Promise<
 // Runs on every outreach tick. Skips threads where webhook already fired
 // (status would already be REPLIED).
 
-async function pollChatReplies(): Promise<number> {
+export async function pollChatReplies(): Promise<number> {
   const activeThreadsWithChat = await prisma.channelThread.findMany({
     where: {
       status: "ACTIVE",
@@ -216,6 +231,7 @@ async function pollChatReplies(): Promise<number> {
       taskId: true,
       providerChatId: true,
       lastMessageAt: true,
+      task: { select: { result: true, analysisResult: true, candidateName: true } },
       channel: {
         select: {
           sendingAccount: { select: { accountId: true, dsn: true, apiKey: true } },
@@ -250,11 +266,15 @@ async function pollChatReplies(): Promise<number> {
       if (hasReply) {
         await markThreadReplied(thread.id, thread.taskId);
         await recomputeTaskStage(thread.taskId);
-        console.log(`[OutreachTick] pollChatReplies: Thread ${thread.id.slice(-6)} → REPLIED`);
+        const replyProfile = thread.task.result ? JSON.parse(thread.task.result as string) : {};
+        const replyAnalysis = thread.task.analysisResult ? JSON.parse(thread.task.analysisResult as string) : {};
+        const replyVars = buildVars(replyProfile, replyAnalysis);
+        console.log(`[OutreachTick] pollChatReplies: "${replyVars.name || thread.id.slice(-6)}" replied → REPLIED`);
         replied++;
       }
     } catch (err: any) {
-      console.warn(`[OutreachTick] pollChatReplies: error for thread ${thread.id}: ${err.message}`);
+      const cLabel = thread.task.candidateName ?? `taskId:${thread.taskId.slice(-8)}`;
+      console.warn(`[OutreachTick] pollChatReplies: error for "${cLabel}" (threadId=${thread.id}): ${err.message}`);
     }
   }
 

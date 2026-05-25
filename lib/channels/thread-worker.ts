@@ -268,7 +268,7 @@ export async function processThread(threadId: string): Promise<void> {
 
   // EC-9.6 — soft-deleted accounts are unusable; treat exactly like DISABLED.
   if (account.deletedAt) {
-    console.warn(`[ThreadWorker] Thread ${threadId}: sending account ${account.accountId} soft-deleted — archiving`);
+    console.warn(`[ThreadWorker] Thread ${threadId}: sending account "${account.name}" soft-deleted — archiving`);
     await archiveThread(thread.id, `Sending account deleted (${account.accountId})`);
     return;
   }
@@ -278,7 +278,7 @@ export async function processThread(threadId: string): Promise<void> {
   // reason. COOLDOWN / BUSY are transient; reschedule until they recover so we
   // don't re-trigger the same rate-limit error on the next tick.
   if (account.status === "DISABLED") {
-    console.warn(`[ThreadWorker] Thread ${threadId}: sending account ${account.accountId} DISABLED — archiving`);
+    console.warn(`[ThreadWorker] Thread ${threadId}: sending account "${account.name}" DISABLED — archiving`);
     await archiveThread(thread.id, `Sending account disabled (${account.accountId})`);
     return;
   }
@@ -288,7 +288,7 @@ export async function processThread(threadId: string): Promise<void> {
       ? account.cooldownUntil
       : minWait;
     await guardedThreadUpdate(thread.id, { nextActionAt: nextAt });
-    console.log(`[ThreadWorker] Thread ${threadId}: account ${account.accountId} ${account.status} — rescheduled to ${nextAt.toISOString()}`);
+    console.log(`[ThreadWorker] Thread ${threadId}: account "${account.name}" ${account.status} — rescheduled to ${nextAt.toISOString()}`);
     return;
   }
 
@@ -305,7 +305,7 @@ export async function processThread(threadId: string): Promise<void> {
   const accountDailyCap = effectiveAccountDailyCap(account);
   if (account.dailyCount >= accountDailyCap) {
     await guardedThreadUpdate(thread.id, { nextActionAt: startOfNextDay() });
-    console.log(`[ThreadWorker] Thread ${threadId}: account ${account.accountId} dailyCount=${account.dailyCount} ≥ ${accountDailyCap}${account.warmupUntil && account.warmupUntil > new Date() ? " (warmup)" : ""} — rescheduled to next day`);
+    console.log(`[ThreadWorker] Thread ${threadId}: account "${account.name}" daily cap hit (${account.dailyCount}/${accountDailyCap}${account.warmupUntil && account.warmupUntil > new Date() ? ", warmup" : ""}) — rescheduled to next day`);
     return;
   }
 
@@ -317,7 +317,7 @@ export async function processThread(threadId: string): Promise<void> {
       ? account.weeklyResetAt
       : startOfNextWeek();
     await guardedThreadUpdate(thread.id, { nextActionAt: nextAt });
-    console.log(`[ThreadWorker] Thread ${threadId}: account ${account.accountId} weeklyCount=${account.weeklyCount} ≥ ${CONFIG.WEEKLY_SAFE_LIMIT} — rescheduled to ${nextAt.toISOString()}`);
+    console.log(`[ThreadWorker] Thread ${threadId}: account "${account.name}" weekly invite cap hit (${account.weeklyCount}/${CONFIG.WEEKLY_SAFE_LIMIT}) — rescheduled to ${nextAt.toISOString()}`);
     return;
   }
 
@@ -328,8 +328,9 @@ export async function processThread(threadId: string): Promise<void> {
   const contact = thread.task.contact ?? null;
 
   const config = thread.channel.config as Record<string, unknown>;
-  const tag = `[ThreadWorker ${thread.channelType} ${threadId.slice(-6)}]`;
-  console.log(`${tag} Processing thread — status=${thread.status} taskId=${thread.taskId} channelType=${thread.channelType} profileLoaded=${!!thread.task.result} analysisLoaded=${!!thread.task.analysisResult}`);
+  const candidateLabel = [vars.name, vars.role && vars.company ? `${vars.role} @ ${vars.company}` : (vars.company || vars.role)].filter(Boolean).join(", ") || threadId.slice(-6);
+  const tag = `[ThreadWorker ${thread.channelType} "${candidateLabel}"]`;
+  console.log(`${tag} Processing — status=${thread.status} taskId=${thread.taskId} via="${account.name}"`);
 
   try {
     switch (thread.channelType) {
@@ -408,7 +409,12 @@ async function processLinkedIn(
   const providerState = (thread.providerState as ProviderState | null) ?? {};
   const providerUserId = String(profile.provider_id || profile.public_identifier || "");
 
-  console.log(`${tag} processLinkedIn start — status=${thread.status} phase=${providerState.phase ?? "none"} providerUserId=${providerUserId || "MISSING"} network_distance=${String(profile.network_distance ?? "n/a")} is_relationship=${String(profile.is_relationship ?? "n/a")} lastMessageAt=${thread.lastMessageAt?.toISOString() ?? "null"} followupsSent=${thread.followupsSent}/${thread.followupsTotal}`);
+  const connectionLabel = profile.network_distance === "FIRST_DEGREE" || profile.network_distance === "DISTANCE_1"
+    ? "1st-degree"
+    : profile.network_distance === "SECOND_DEGREE" ? "2nd-degree"
+    : profile.network_distance === "THIRD_DEGREE" ? "3rd-degree"
+    : String(profile.network_distance ?? "unknown");
+  console.log(`${tag} processLinkedIn — status=${thread.status} phase=${providerState.phase ?? "none"} connection=${connectionLabel} followups=${thread.followupsSent}/${thread.followupsTotal}${providerUserId ? "" : " [MISSING LinkedIn ID]"}`);
 
   if (!providerUserId) {
     console.log(`${tag} Archiving — no LinkedIn provider ID on profile`);
@@ -450,7 +456,7 @@ async function processLinkedIn(
         profile.network_distance === "DISTANCE_1" ||
         profile.is_relationship === true;
 
-      console.log(`${tag} Already-connected check: network_distance="${String(profile.network_distance ?? "")}" is_relationship=${String(profile.is_relationship ?? "")} → alreadyConnected=${alreadyConnected}`);
+      console.log(`${tag} Connection check: ${connectionLabel}, is_relationship=${String(profile.is_relationship ?? "")} → alreadyConnected=${alreadyConnected}`);
 
       if (alreadyConnected) {
         console.log(`${tag} Already connected — skipping invite, setting CONNECTED phase for DM`);
@@ -462,10 +468,10 @@ async function processLinkedIn(
         });
         return;
       }
-      console.log(`${tag} Not already connected — sending CONNECTION_REQUEST invite to providerUserId=${providerUserId}`);
+      console.log(`${tag} Not connected — sending CONNECTION_REQUEST invite (via "${account.name}")`);
       await sendLinkedInInvite(thread, rule, vars, account, config, providerUserId, tag);
     } else {
-      console.log(`${tag} InMail path — sending InMail to providerUserId=${providerUserId}`);
+      console.log(`${tag} InMail path — sending InMail (via "${account.name}")`);
       await sendLinkedInInMail(thread, rule, vars, account, config, providerUserId, tag);
     }
     return;
@@ -531,7 +537,7 @@ async function processLinkedIn(
     }
 
     const text = renderTemplate(firstDmTemplate.template, vars);
-    console.log(`${tag} Sending first DM via startChat to providerUserId=${providerUserId} (text length=${text.length})`);
+    console.log(`${tag} Sending first DM via "${account.name}" (${text.length} chars)`);
     let chatId: string;
     let messageId: string;
     try {
@@ -542,7 +548,7 @@ async function processLinkedIn(
         accountDsn: account.dsn ?? undefined,
         accountApiKey: account.apiKey ?? undefined,
       }));
-      console.log(`${tag} startChat succeeded — chatId=${chatId} messageId=${messageId}`);
+      console.log(`${tag} startChat succeeded — chatId=${chatId}`);
     } catch (err: any) {
       // Not actually connected yet — reset to PENDING so the invite gets sent
       if ((err.message ?? "").toLowerCase().includes("no_connection_with_recipient")) {
@@ -1348,6 +1354,7 @@ type ProviderState = Record<string, string>;
 type AccountRow = {
   id: string;
   accountId: string;
+  name: string;
   dsn: string | null;
   apiKey: string | null;
   status: import("@prisma/client").AccountStatus;

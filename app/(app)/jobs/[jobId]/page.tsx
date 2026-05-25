@@ -408,7 +408,6 @@ export default function RequisitionDetailPage() {
                 : "Check Acceptances"}
             </Button>
 
-            {/* Add Candidates */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button className="gap-2">

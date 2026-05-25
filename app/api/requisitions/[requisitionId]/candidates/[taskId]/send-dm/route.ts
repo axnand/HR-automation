@@ -11,13 +11,13 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ requisitionId: string; taskId: string }> },
 ) {
+  const { requisitionId: rawReqId, taskId } = await params;
   try {
-    const { requisitionId: rawReqId, taskId } = await params;
     const requisitionId = await resolveRequisitionId(rawReqId);
 
     const task = await prisma.task.findUnique({
       where: { id: taskId },
-      select: { id: true, url: true, stage: true, result: true, analysisResult: true },
+      select: { id: true, url: true, stage: true, result: true, analysisResult: true, candidateName: true },
     });
 
     if (!task) {
@@ -88,7 +88,8 @@ export async function POST(
       orderBy: { createdAt: "desc" },
     });
     if (!thread) {
-      console.log(`[send-dm] No ChannelThread for taskId=${taskId} channelId=${channel.id} — creating one`);
+      const cLabel = task.candidateName ?? taskId;
+      console.log(`[send-dm] No ChannelThread for "${cLabel}" (taskId=${taskId}) — creating one`);
       thread = await prisma.channelThread.create({
         data: {
           taskId,
@@ -166,7 +167,7 @@ export async function POST(
 
     return NextResponse.json({ ok: true, chatId, messageId });
   } catch (error: any) {
-    console.error("[send-dm] failed:", error);
+    console.error(`[send-dm] failed for taskId=${taskId}: ${error?.message ?? error}`);
     const message = error?.message || "Internal server error";
     const status = error?.statusCode && error.statusCode < 500 ? error.statusCode : 500;
     return NextResponse.json({ error: message }, { status });

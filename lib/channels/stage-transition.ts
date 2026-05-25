@@ -177,7 +177,7 @@ export async function applyStageTransition(input: ApplyTransitionInput): Promise
   try {
     const existing = await prisma.task.findUnique({
       where: { id: taskId },
-      select: { stage: true, jobId: true, stageUpdatedAt: true },
+      select: { stage: true, jobId: true, stageUpdatedAt: true, candidateName: true },
     });
     if (!existing) {
       return { ok: false, kind: "not_found" };
@@ -359,6 +359,9 @@ export async function applyStageTransition(input: ApplyTransitionInput): Promise
         console.error("[applyStageTransition] fanOut failed:", err),
       );
     }
+
+    const cLabel = existing.candidateName ?? `taskId:${taskId.slice(-8)}`;
+    console.log(`[StageTransition] "${cLabel}" ${fromStage} → ${toStage} (taskId=${taskId} effect=${transition.effect} actor=USER)`);
 
     return { ok: true, task: updated, effect: transition.effect };
   } catch (err: any) {

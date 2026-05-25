@@ -66,7 +66,7 @@ export async function recomputeTaskStage(
   const [task, threads] = await Promise.all([
     tx.task.findUnique({
       where: { id: taskId },
-      select: { stage: true, manualStage: true },
+      select: { stage: true, manualStage: true, candidateName: true },
     }),
     tx.channelThread.findMany({
       where: { taskId },
@@ -76,6 +76,8 @@ export async function recomputeTaskStage(
 
   if (!task) throw new Error(`recomputeTaskStage: task ${taskId} not found`);
 
+  const cLabel = task.candidateName ?? `taskId:${taskId.slice(-8)}`;
+
   // Recruiter decision always wins
   if (task.manualStage && MANUAL_WINS.has(task.manualStage)) {
     if (task.stage !== task.manualStage) {
@@ -83,6 +85,7 @@ export async function recomputeTaskStage(
         where: { id: taskId },
         data: { stage: task.manualStage, stageUpdatedAt: new Date() },
       });
+      console.log(`[StageRollup] "${cLabel}" ${task.stage} → ${task.manualStage} (taskId=${taskId} source=${source} reason=manualStage)`);
       return { stage: task.manualStage, changed: true, fromStage: task.stage, source };
     }
     return { stage: task.manualStage, changed: false, source };
@@ -115,6 +118,7 @@ export async function recomputeTaskStage(
           },
         });
       });
+      console.log(`[StageRollup] "${cLabel}" ${task.stage} → ARCHIVED (taskId=${taskId} source=${source})`);
       return { stage: "ARCHIVED", changed: true, fromStage: task.stage, source };
     }
     return { stage: "ARCHIVED", changed: false, source };
@@ -192,6 +196,7 @@ export async function recomputeTaskStage(
         },
       });
     });
+    console.log(`[StageRollup] "${cLabel}" ${task.stage} → ${derived} (taskId=${taskId} source=${source})`);
     return { stage: derived, changed: true, fromStage: task.stage, source };
   }
 
