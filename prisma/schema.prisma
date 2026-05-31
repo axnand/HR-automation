@@ -166,6 +166,7 @@ model Requisition {
   jobs           Job[]
   channels       Channel[]
   duplicatePairs DuplicatePair[]
+  stageSnapshots StageSnapshot[]
 
   @@index([archived])
 }
@@ -180,6 +181,7 @@ model Job {
   failedCount    Int       @default(0)
   config         String?   @db.Text // JSON snapshot of the requisition config at run time
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   tasks          Task[]
   title          String    @default("Untitled Requisition")
   department     String    @default("")
@@ -411,6 +413,12 @@ model ChannelThread {
   // back to JSON scan of task.result for those rows.
   candidateProviderId  String?
   createdAt            DateTime     @default(now())
+  // Two-phase rollout (CLAUDE.md schema rule #1): currently nullable so the
+  // ADD COLUMN migration is non-blocking. A backfill script populates
+  // updatedAt = createdAt for legacy rows; a follow-up migration will set
+  // DEFAULT CURRENT_TIMESTAMP + NOT NULL and this declaration will drop
+  // the `?`. Prisma's @updatedAt populates this on every update either way.
+  updatedAt            DateTime?    @updatedAt
 
   task     Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
   channel  Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -482,7 +490,12 @@ model WebhookEvent {
 model StageSnapshot {
   id            String         @id @default(cuid())
   capturedAt    DateTime       @default(now())
+  // FK with onDelete: SetNull — snapshots survive requisition deletion
+  // (append-only audit) but the column reflects whether the requisition
+  // still exists instead of dangling on a stale id. See migration
+  // 20260601000005_stage_snapshot_requisition_fk.
   requisitionId String?
+  requisition   Requisition?   @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
   stage         CandidateStage
   count         Int
 
@@ -529,6 +542,8 @@ model CandidateContact {
   source        String? // UNIPILE | WIZA | APOLLO | AIRSCALE | MANUAL
   confidence    Float?
   enrichedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }

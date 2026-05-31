@@ -25,7 +25,17 @@ export interface ChatCompletionOptions {
 
 export interface ChatCompletionResult {
   content: string;
-  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    // Tokens served from the provider's prompt cache (OpenAI: prompt_tokens_details.cached_tokens;
+    // Anthropic: cache_read_input_tokens). 0 when caching is off or the prefix is below the
+    // provider's minimum cacheable size. Subset of prompt_tokens — already counted there.
+    cached_tokens: number;
+    // Tokens written to the cache this request (Anthropic only; OpenAI doesn't bill writes separately).
+    cache_write_tokens: number;
+  };
   model: string;
   provider: string;
 }
@@ -122,9 +132,16 @@ async function openaiCompatible(
   const content = result.choices?.[0]?.message?.content;
   if (!content) throw new Error(`No response from ${config.name}.`);
 
+  const u = result.usage || {};
   return {
     content,
-    usage: result.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usage: {
+      prompt_tokens: u.prompt_tokens || 0,
+      completion_tokens: u.completion_tokens || 0,
+      total_tokens: u.total_tokens || 0,
+      cached_tokens: u.prompt_tokens_details?.cached_tokens || 0,
+      cache_write_tokens: 0,
+    },
     model: result.model || model,
     provider: config.name,
   };
@@ -183,12 +200,21 @@ async function anthropicRequest(
   const content = result.content?.[0]?.text;
   if (!content) throw new Error(`No response from ${config.name}.`);
 
+  // Anthropic reports input_tokens as the UNCACHED prefix only.
+  // True prompt size = input_tokens + cache_read + cache_creation. We surface that as prompt_tokens
+  // so the caller sees a consistent "total prompt size" across providers.
+  const inputTokens = result.usage?.input_tokens || 0;
+  const cacheRead = result.usage?.cache_read_input_tokens || 0;
+  const cacheWrite = result.usage?.cache_creation_input_tokens || 0;
+  const outputTokens = result.usage?.output_tokens || 0;
   return {
     content,
     usage: {
-      prompt_tokens: result.usage?.input_tokens || 0,
-      completion_tokens: result.usage?.output_tokens || 0,
-      total_tokens: (result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0),
+      prompt_tokens: inputTokens + cacheRead + cacheWrite,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + cacheRead + cacheWrite + outputTokens,
+      cached_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
     },
     model: result.model || model,
     provider: config.name,
@@ -268,12 +294,16 @@ async function bedrockRequest(
   const content = result.output?.message?.content?.[0]?.text;
   if (!content) throw new Error(`No response content from ${config.name}.`);
 
+  // Bedrock Converse reports prompt-cache usage on supported models (Claude 3.5 Sonnet v2+).
+  const bedrockUsage = result.usage || {};
   return {
     content,
     usage: {
-      prompt_tokens: result.usage?.inputTokens || 0,
-      completion_tokens: result.usage?.outputTokens || 0,
-      total_tokens: result.usage?.totalTokens || 0,
+      prompt_tokens: bedrockUsage.inputTokens || 0,
+      completion_tokens: bedrockUsage.outputTokens || 0,
+      total_tokens: bedrockUsage.totalTokens || 0,
+      cached_tokens: bedrockUsage.cacheReadInputTokens || 0,
+      cache_write_tokens: bedrockUsage.cacheWriteInputTokens || 0,
     },
     model,
     provider: config.name,

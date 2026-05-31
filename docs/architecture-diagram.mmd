@@ -1,0 +1,39 @@
+flowchart TD
+    UI([React App / Browser])
+
+    subgraph VCL["Vercel — bom1"]
+        API[Next.js API Routes]
+        C1[cron: process-tasks]
+        C2[cron: cleanup-webhooks]
+    end
+
+    subgraph RLW["Railway Worker — worker.ts"]
+        LiQ[process-task queue]
+        RsQ[process-resume-task queue]
+        OT[outreach tick every 30s]
+    end
+
+    subgraph PG["PostgreSQL — E2E Server"]
+        DB[(App Tables)]
+        PGB[(pgboss.job)]
+    end
+
+    UNI([Unipile API])
+    LLM([LLM Provider])
+    S3([AWS S3])
+
+    UI -->|REST| API
+    API -->|read / write| DB
+    API -->|enqueue| PGB
+    LiQ -->|poll| PGB
+    LiQ -->|write result| DB
+    LiQ -->|fetch profile| UNI
+    LiQ -->|score| LLM
+    RsQ -->|poll| PGB
+    RsQ -->|write result| DB
+    RsQ -->|read PDF| S3
+    RsQ -->|score| LLM
+    OT -->|send invite / DM| UNI
+    UNI -->|webhook reply| API
+    C1 -->|reset accounts| DB
+    C2 -->|prune events| DB

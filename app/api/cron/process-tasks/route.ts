@@ -53,6 +53,37 @@ export async function GET(req: NextRequest) {
       console.log(`[Cron] Reset ${resetAccounts} orphaned BUSY accounts`);
     }
 
+    // 1b. Recover stuck ChannelThreads. The outreach tick claims threads by
+    // setting nextActionAt = NULL. If the Railway worker restarts between
+    // claim and processThread() (or between API call and DB commit), the
+    // thread becomes invisible to the scheduler — nothing else looks for
+    // (status IN PENDING|ACTIVE, nextActionAt IS NULL). Without this
+    // recovery the candidate's outreach silently stops.
+    //
+    // 10-minute floor on createdAt / pendingSendStartedAt avoids racing
+    // with an in-flight tick (claim → processThread window is sub-second).
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const stuckResult = await prisma.channelThread.updateMany({
+      where: {
+        status: { in: ["PENDING", "ACTIVE"] },
+        nextActionAt: null,
+        OR: [
+          // Worker crashed after claim but before reaching markPendingSend
+          { pendingSendKey: null, createdAt: { lt: tenMinAgo } },
+          // Worker crashed between provider API call and DB commit
+          { pendingSendKey: { not: null }, pendingSendStartedAt: { lt: tenMinAgo } },
+        ],
+      },
+      data: {
+        nextActionAt: new Date(),
+        pendingSendKey: null,
+        pendingSendStartedAt: null,
+      },
+    });
+    if (stuckResult.count > 0) {
+      console.log(`[Cron] Recovered ${stuckResult.count} stuck ChannelThreads`);
+    }
+
     // 2. Refresh expired cooldowns
     await refreshCooldowns();
 
@@ -79,6 +110,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       message: "Maintenance complete",
       resetAccounts,
+      recoveredThreads: stuckResult.count,
       clearedProfiles,
     });
   } catch (error) {

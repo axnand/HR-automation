@@ -6,6 +6,7 @@ import { enqueueTaskBatch } from "@/lib/queue";
 import { resolveRequisitionId } from "@/lib/resolve-requisition";
 import { uploadPdfToS3 } from "@/lib/s3";
 import { extractResumeInfo } from "@/lib/extract-resume";
+import { orderedPair } from "@/lib/duplicate-pair";
 import JSZip from "jszip";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require("pdf-parse/lib/pdf-parse") as (buffer: Buffer) => Promise<{ text: string; numpages: number }>;
@@ -267,7 +268,7 @@ export async function POST(
   for (const [hash, ids] of hashToNewTaskIds.entries()) {
     for (let i = 0; i < ids.length - 1; i++) {
       for (let j = i + 1; j < ids.length; j++) {
-        pairsToCreate.push({ requisitionId, taskAId: ids[i], taskBId: ids[j], kind: DuplicateKind.RESUME_HASH, matchValue: hash });
+        pairsToCreate.push(orderedPair(requisitionId, ids[i], ids[j], DuplicateKind.RESUME_HASH, hash));
       }
     }
   }
@@ -302,7 +303,7 @@ export async function POST(
       for (const prev of prevDone) {
         if (!prev.contentHash) continue;
         for (const newId of hashToNewTaskIds.get(prev.contentHash) ?? []) {
-          pairsToCreate.push({ requisitionId, taskAId: newId, taskBId: prev.id, kind: DuplicateKind.RESUME_HASH, matchValue: prev.contentHash });
+          pairsToCreate.push(orderedPair(requisitionId, newId, prev.id, DuplicateKind.RESUME_HASH, prev.contentHash));
         }
       }
     }

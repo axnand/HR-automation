@@ -1,0 +1,314 @@
+erDiagram
+
+    Requisition {
+        string  id           PK
+        string  title
+        string  department
+        string  recruiterName
+        string  config       "JSON: JD + scoring rules + model"
+        boolean archived
+        boolean isActive
+        datetime createdAt
+    }
+
+    Job {
+        string  id           PK
+        string  requisitionId FK
+        string  status       "PENDING|PROCESSING|COMPLETED|FAILED|CANCELLED|PAUSED"
+        int     totalTasks
+        int     processedCount
+        int     successCount
+        int     failedCount
+        string  config       "JSON snapshot of config at run time"
+        datetime createdAt
+    }
+
+    Task {
+        string  id              PK
+        string  jobId           FK
+        string  url
+        string  source          "linkedin_url | resume | zip_import"
+        string  status          "PENDING|PROCESSING|DONE|FAILED"
+        string  result          "JSON: raw Unipile profile"
+        string  analysisResult  "JSON: AI scoring output"
+        string  analysisStatus  "PENDING|OK|FAILED"
+        string  errorMessage
+        int     retryCount
+        string  accountId       FK
+        string  contentHash     "SHA-256 for resume dedup"
+        string  stage           "materialized rollup"
+        string  manualStage     "recruiter override — wins for INTERVIEW/HIRED/REJECTED"
+        string  candidateName   "denormalized from result JSON"
+        string  candidateProfileId FK
+        datetime deletedAt      "soft-delete"
+        string  deletedReason
+    }
+
+    Account {
+        string   id            PK
+        string   accountId     "Unipile account_id"
+        string   name
+        string   type          "LINKEDIN|EMAIL|WHATSAPP"
+        string   dsn           "optional per-account Unipile DSN"
+        string   apiKey        "optional per-account Unipile key"
+        string   status        "ACTIVE|BUSY|COOLDOWN|DISABLED"
+        int      dailyCount
+        datetime dailyResetAt
+        int      weeklyCount
+        datetime weeklyResetAt
+        int      minuteCount
+        datetime minuteResetAt
+        datetime cooldownUntil
+        datetime warmupUntil   "ramp period for new accounts"
+        datetime deletedAt     "soft-delete"
+    }
+
+    Channel {
+        string   id              PK
+        string   requisitionId   FK
+        string   type            "LINKEDIN|EMAIL|WHATSAPP"
+        string   name
+        string   status          "ACTIVE|PAUSED|ARCHIVED"
+        json     config          "invite rules, followups, score bands"
+        string   sendingAccountId FK
+        int      dailyCap
+        int      dailyInMailCap
+    }
+
+    ChannelAccountPool {
+        string  id        PK
+        string  channelId FK
+        string  accountId FK
+        int     priority
+        int     weight
+    }
+
+    ChannelThread {
+        string   id                 PK
+        string   taskId             FK
+        string   channelId          FK
+        string   channelType        "denormalized"
+        string   status             "PENDING|ACTIVE|REPLIED|PAUSED|ARCHIVED"
+        json     providerState      "{ phase: INVITE_PENDING|CONNECTED|MESSAGED|... }"
+        string   matchedRuleKey
+        datetime nextActionAt       "THE scheduling key"
+        datetime inviteSentAt
+        datetime lastMessageAt
+        int      followupsSent
+        int      followupsTotal
+        string   providerChatId     "Unipile chat_id"
+        string   providerThreadId   "email thread id"
+        string   accountId          FK "sticky — set at first send, never changed"
+        string   candidateProviderId "LinkedIn provider_id for webhook lookup"
+        int      consecutiveFailures "circuit breaker"
+        datetime lastInboundAt      "WhatsApp 24h window"
+        string   pendingSendKey      "crash-recovery marker"
+        datetime archivedAt
+        string   archivedReason
+    }
+
+    ThreadMessage {
+        string   id               PK
+        string   threadId         FK
+        string   type             "INVITE|INMAIL|FIRST_DM|EMAIL|FOLLOWUP|WHATSAPP"
+        string   status           "SENT|FAILED"
+        string   renderedBody
+        string   renderedSubject
+        datetime sentAt
+        string   providerMessageId "unique with threadId"
+        string   providerChatId
+        string   accountId        FK "frozen at send time"
+    }
+
+    CandidateProfile {
+        string   id                   PK
+        string   linkedinUrl
+        string   canonicalLinkedinUrl "normalized for dedup"
+        string   name
+        string   headline
+        string   location
+        string   rawProfile           "full Unipile JSON (nullable)"
+        datetime scrapedAt
+    }
+
+    AnalysisRecord {
+        string  id            PK
+        string  candidateId   FK
+        string  linkedinUrl
+        string  candidateName
+        string  jobTitle
+        string  jobDescription
+        string  scoringConfig  "JSON: rules + model used"
+        string  analysisData   "full AnalysisResult JSON"
+        int     totalScore
+        int     maxScore
+        float   scorePercent
+        string  recommendation "Strong Fit|Moderate Fit|Not a Fit"
+        datetime analyzedAt
+    }
+
+    StageEvent {
+        string   id        PK
+        string   taskId    FK
+        string   fromStage
+        string   toStage
+        string   actor     "USER|SYSTEM|RULE|WEBHOOK"
+        string   reason
+        datetime createdAt
+    }
+
+    Note {
+        string   id          PK
+        string   taskId      FK
+        string   authorEmail
+        string   body
+        datetime createdAt
+    }
+
+    CandidateContact {
+        string   id            PK
+        string   taskId        FK "unique"
+        string   email
+        string   workEmail
+        string   personalEmail
+        string   phone          "E.164 for WhatsApp"
+        string   source         "UNIPILE|WIZA|APOLLO|AIRSCALE|MANUAL"
+        float    confidence
+        datetime enrichedAt
+    }
+
+    ScoreOverride {
+        string  id       PK
+        string  taskId   FK
+        string  ruleKey
+        string  paramKey "unique with taskId"
+        int     original
+        int     override
+        string  reason
+        string  author
+    }
+
+    DuplicatePair {
+        string   id            PK
+        string   requisitionId FK
+        string   taskAId       FK
+        string   taskBId       FK
+        string   kind          "LINKEDIN_URL|RESUME_HASH"
+        string   matchValue
+        string   status        "PENDING|RESOLVED_DELETED_A|RESOLVED_DELETED_B|RESOLVED_KEPT_BOTH"
+        datetime resolvedAt
+        string   resolvedBy
+    }
+
+    WebhookEvent {
+        string   id          PK "provider's own event id"
+        string   provider    "unipile"
+        string   eventType
+        datetime receivedAt
+        datetime processedAt
+    }
+
+    StageSnapshot {
+        string   id            PK
+        datetime capturedAt
+        string   requisitionId
+        string   stage
+        int      count
+    }
+
+    JdTemplate {
+        string   id                PK
+        string   title
+        string   content
+        string   scoringRules      "JSON"
+        string   customScoringRules "JSON"
+        datetime createdAt
+    }
+
+    PromptTemplate {
+        string   id        PK
+        string   title
+        string   content
+        boolean  isDefault
+    }
+
+    EvaluationConfig {
+        string  id                   PK
+        string  title
+        boolean isDefault
+        string  promptRole
+        string  criticalInstructions
+        string  promptGuidelines
+        string  scoringRules         "JSON"
+        string  customScoringRules   "JSON"
+        string  ruleDefinitions      "JSON: per-rule overrides"
+        string  promptEnvelope       "JSON: structural prompt overrides"
+    }
+
+    AppSettings {
+        string  id               PK "always 'global'"
+        string  aiModel          "default model"
+        string  aiProviderId     FK
+        string  sheetWebAppUrl
+        int     minScoreThreshold
+        string  promptRole
+        string  promptGuidelines
+        string  criticalInstructions
+    }
+
+    AiProvider {
+        string  id        PK
+        string  name
+        string  provider  "openai-compatible|anthropic|bedrock"
+        string  baseUrl
+        string  apiKey
+        string  secretKey "Bedrock only"
+        string  models    "JSON array"
+        boolean isDefault
+    }
+
+    SheetIntegration {
+        string  id   PK
+        string  name
+        string  url  "Google Apps Script web app URL"
+    }
+
+    GdprErasure {
+        string   id           PK
+        datetime erasedAt
+        string   erasedBy
+        int      taskCount
+        string   snapshotJson "identifiers before deletion"
+    }
+
+    %% ─── Relationships ───────────────────────────────────────────────────────────
+
+    Requisition    ||--o{ Job              : owns
+    Requisition    ||--o{ Channel          : owns
+    Requisition    ||--o{ DuplicatePair    : tracks
+
+    Job            ||--o{ Task             : contains
+
+    Task           }o--o| Account          : "scraped by"
+    Task           }o--o| CandidateProfile : "identity link"
+    Task           ||--o{ ChannelThread    : threads
+    Task           ||--o{ StageEvent       : "audit trail"
+    Task           ||--o{ Note             : notes
+    Task           ||--o| CandidateContact : "contact info"
+    Task           ||--o{ ScoreOverride    : overrides
+    Task           ||--o{ DuplicatePair    : "pair A or B"
+
+    Channel        ||--o{ ChannelThread    : threads
+    Channel        ||--o{ ChannelAccountPool : pool
+    Channel        }o--o| Account          : "default sender"
+
+    ChannelThread  }o--o| Account          : "sticky sender"
+    ChannelThread  ||--o{ ThreadMessage    : messages
+
+    CandidateProfile ||--o{ AnalysisRecord : analyses
+    CandidateProfile ||--o{ Task           : tasks
+
+    Account        ||--o{ ChannelAccountPool : memberships
+
+    AppSettings    }o--o| AiProvider       : "default provider"
+    AiProvider     ||--o{ AppSettings      : "used by"

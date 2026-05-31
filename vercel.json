@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/cleanup-webhooks",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/stage-snapshot",
+      "schedule": "0 8 * * *"
     }
   ]
 }

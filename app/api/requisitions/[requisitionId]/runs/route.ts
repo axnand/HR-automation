@@ -4,17 +4,16 @@ import { prisma } from "@/lib/prisma";
 import { parseAndValidateUrls } from "@/lib/validators";
 import { enqueueTaskBatch } from "@/lib/queue";
 import { resolveRequisitionId } from "@/lib/resolve-requisition";
+import { orderedPair, type DuplicatePairInput as PairInput } from "@/lib/duplicate-pair";
 
 export const dynamic = "force-dynamic";
-
-type PairInput = { requisitionId: string; taskAId: string; taskBId: string; kind: DuplicateKind; matchValue: string };
 
 function withinBatchPairs(urlToTaskIds: Map<string, string[]>, requisitionId: string): PairInput[] {
   const pairs: PairInput[] = [];
   for (const [url, ids] of urlToTaskIds.entries()) {
     for (let i = 0; i < ids.length - 1; i++) {
       for (let j = i + 1; j < ids.length; j++) {
-        pairs.push({ requisitionId, taskAId: ids[i], taskBId: ids[j], kind: DuplicateKind.LINKEDIN_URL, matchValue: url });
+        pairs.push(orderedPair(requisitionId, ids[i], ids[j], DuplicateKind.LINKEDIN_URL, url));
       }
     }
   }
@@ -47,7 +46,7 @@ async function crossRunPairs(
   const pairs: PairInput[] = [];
   for (const prev of prevDone) {
     for (const newId of urlToTaskIds.get(prev.url) ?? []) {
-      pairs.push({ requisitionId, taskAId: newId, taskBId: prev.id, kind: DuplicateKind.LINKEDIN_URL, matchValue: prev.url });
+      pairs.push(orderedPair(requisitionId, newId, prev.id, DuplicateKind.LINKEDIN_URL, prev.url));
     }
   }
   return pairs;

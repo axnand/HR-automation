@@ -17,6 +17,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, Eye, Check, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_CRITICAL_INSTRUCTIONS } from "@/lib/analyzer";
+import { MODEL_PRICING, estimateCost, formatCost } from "@/lib/model-pricing";
+
+// Rough estimate: ~4 chars per token for English text. Good enough for a UI hint.
+const APPROX_CHARS_PER_TOKEN = 4;
+// Typical analyzer output size for one profile. The hard cap (max_tokens) is 2000
+// but real responses fit well under that; 800 is a reasonable average.
+const ESTIMATED_OUTPUT_TOKENS = 800;
+function approxTokens(text: string | null | undefined): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
+}
 
 interface EvalConfig {
   id: string;
@@ -797,7 +808,48 @@ export function JdDescriptionTab({ requisitionId, initialConfig, initialTitle, o
           </DialogHeader>
           {previewLoading || !previewData ? (
             <p className="text-sm text-muted-foreground">Compiling prompt…</p>
-          ) : (
+          ) : (() => {
+            const sysTokens = approxTokens(previewData.systemPrompt);
+            const userTokens = approxTokens(previewData.userPrompt);
+            const inputTokens = sysTokens + userTokens;
+            const totalTokens = inputTokens + ESTIMATED_OUTPUT_TOKENS;
+            const pricing = aiModel ? MODEL_PRICING[aiModel] : undefined;
+            const cost = aiModel
+              ? estimateCost(inputTokens, ESTIMATED_OUTPUT_TOKENS, aiModel)
+              : null;
+            return (
+              <>
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Estimated tokens per profile</span>
+                    <span className="font-mono">
+                      {inputTokens.toLocaleString()} in + ~{ESTIMATED_OUTPUT_TOKENS.toLocaleString()} out
+                      <span className="text-muted-foreground"> = {totalTokens.toLocaleString()}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">
+                      Estimated cost per profile{aiModel ? ` (${aiModel})` : ""}
+                    </span>
+                    <span className="font-mono">
+                      {!aiModel ? (
+                        <span className="text-muted-foreground">Select a model</span>
+                      ) : !pricing || !cost ? (
+                        <span className="text-muted-foreground">Pricing unknown</span>
+                      ) : (
+                        <>
+                          {formatCost(cost.totalCost)}
+                          <span className="text-muted-foreground">
+                            {" "}({formatCost(cost.inputCost)} in + {formatCost(cost.outputCost)} out)
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/80 pt-0.5">
+                    Rough estimate: ~4 chars/token, ~{ESTIMATED_OUTPUT_TOKENS} output tokens assumed. Actual usage will vary with profile size.
+                  </p>
+                </div>
             <Tabs defaultValue="system">
               <TabsList>
                 <TabsTrigger value="system">System</TabsTrigger>
@@ -814,7 +866,9 @@ export function JdDescriptionTab({ requisitionId, initialConfig, initialTitle, o
                 </pre>
               </TabsContent>
             </Tabs>
-          )}
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

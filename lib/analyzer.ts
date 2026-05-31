@@ -342,7 +342,7 @@ Any ambiguity → NO growth
 // ─── Default Prompt Envelope ──────────────────────────────────────
 
 export const DEFAULT_PROMPT_ENVELOPE: PromptEnvelope = {
-  identityTemplate: "{role} Today's date is {today}. Do NOT treat recent or current dates as typos — they are valid. Score the candidate using ONLY the rules below. Stability, location, and candidate info are pre-computed — do NOT evaluate them.",
+  identityTemplate: "{role} Treat recent or current dates as valid, not typos. Score the candidate using ONLY the rules below. Stability, location, and candidate info are pre-computed — do NOT evaluate them.",
   defaultRole: "You are a strict ATS evaluator.",
   guidelinesSectionHeader: "ADDITIONAL EVALUATION GUIDELINES (follow these strictly in all scoring decisions):",
   recruiterContextHeader: "RECRUITER CONTEXT (for this specific job — use to guide ALL scoring decisions below):",
@@ -800,6 +800,11 @@ export function buildSystemPrompt(
 }
 
 export function buildUserPrompt(profileData: any, jobDescription: string, candidateInfo: CandidateInfo): string {
+  // Date footer is appended at the very end of the user prompt so it sits outside the cacheable
+  // prefix (system + JD + candidate data). Keeping the date out of the system prompt is what lets
+  // OpenAI's prompt cache stay valid for the whole batch — see lib/analyzer.ts identityTemplate.
+  const dateFooter = `\n---\nToday's date is ${new Date().toISOString().split("T")[0]}.\n`;
+
   // ── Resume / plain-text mode ──
   // profileData comes from an uploaded PDF: { resumeText, sourceFileName }
   if (profileData?.resumeText) {
@@ -812,7 +817,7 @@ export function buildUserPrompt(profileData: any, jobDescription: string, candid
     prompt += `NOTE: This candidate was sourced from an uploaded resume/LinkedIn PDF export, not a live LinkedIn scrape.\n`;
     prompt += `Extract all relevant information (name, company, role, experience, education, skills) DIRECTLY from the raw text above.\n`;
     prompt += `Score ALL rules (including Stability and Location) by reading the raw resume text directly.\n`;
-    return prompt;
+    return prompt + dateFooter;
   }
 
   const jd = parseJobDescription(jobDescription);
@@ -936,7 +941,7 @@ export function buildUserPrompt(profileData: any, jobDescription: string, candid
     prompt += `### Certifications\n${certNames.join(", ")}\n\n`;
   }
 
-  return prompt;
+  return prompt + dateFooter;
 }
 
 // ─── Main Analysis Function ──────────────────────────────────────
@@ -1024,7 +1029,15 @@ export async function analyzeProfile(
 
   const content = aiResult.content;
   const resultUsage = aiResult.usage;
-  console.log(`[Analyzer] AI response (${aiResult.provider}). Usage: ${JSON.stringify(resultUsage)}`);
+  const cacheHitPct = resultUsage.prompt_tokens
+    ? Math.round((resultUsage.cached_tokens / resultUsage.prompt_tokens) * 100)
+    : 0;
+  console.log(
+    `[Analyzer] AI response (${aiResult.provider}). ` +
+      `prompt: ${resultUsage.prompt_tokens} (cached: ${resultUsage.cached_tokens}, ` +
+      `hit: ${cacheHitPct}%${resultUsage.cache_write_tokens ? `, written: ${resultUsage.cache_write_tokens}` : ""}), ` +
+      `completion: ${resultUsage.completion_tokens}, total: ${resultUsage.total_tokens}`
+  );
 
   let llmResult: any;
   try {
