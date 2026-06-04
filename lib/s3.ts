@@ -22,7 +22,7 @@ function objectUrl(bucket: string, region: string, key: string): string {
   return `https://${bucket}.s3.${region}.amazonaws.com/${encoded}`;
 }
 
-export async function uploadPdfToS3(key: string, body: Buffer): Promise<string> {
+export async function uploadToS3(key: string, body: Buffer, mimeType: string): Promise<string> {
   const { aws, bucket, region } = getConfig();
   const url = objectUrl(bucket, region, key);
 
@@ -30,7 +30,7 @@ export async function uploadPdfToS3(key: string, body: Buffer): Promise<string> 
     method: "PUT",
     body: new Uint8Array(body),
     headers: {
-      "Content-Type": "application/pdf",
+      "Content-Type": mimeType,
       "Content-Length": String(body.length),
     },
   });
@@ -40,6 +40,10 @@ export async function uploadPdfToS3(key: string, body: Buffer): Promise<string> 
     throw new Error(`S3 upload failed (${res.status}): ${text.slice(0, 500)}`);
   }
   return key;
+}
+
+export async function uploadPdfToS3(key: string, body: Buffer): Promise<string> {
+  return uploadToS3(key, body, "application/pdf");
 }
 
 export async function getSignedDownloadUrl(key: string, expiresSeconds = 3600): Promise<string> {

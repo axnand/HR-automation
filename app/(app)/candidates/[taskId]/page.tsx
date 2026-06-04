@@ -7,13 +7,20 @@ import {
   ChevronRight, ExternalLink, Briefcase, Building2, MapPin,
   GraduationCap, FileText, Send, Loader2, MessageSquare,
   ArrowRightLeft, Calendar, TrendingUp, Award, AlertCircle, CheckCircle2,
-  XCircle, ChevronLeft, StickyNote, Pencil,
+  XCircle, ChevronLeft, StickyNote, Pencil, Paperclip, Trash2, MoreHorizontal,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { estimateCost, formatCost } from "@/lib/model-pricing";
@@ -45,6 +52,15 @@ interface Note {
   id: string;
   body: string;
   authorEmail: string;
+  createdAt: string;
+}
+
+interface CandidateFile {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  uploadedBy: string;
   createdAt: string;
 }
 
@@ -114,6 +130,8 @@ export default function CandidateDetailPage() {
   const [noteInput, setNoteInput] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<"all" | "note" | "message" | "stage">("all");
+  const [files, setFiles] = useState<CandidateFile[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const refreshTask = () => {
     fetch(`/api/tasks/${taskId}`)
@@ -129,7 +147,48 @@ export default function CandidateDetailPage() {
       .then(r => r.json())
       .then(d => setNotes(d.notes ?? []))
       .catch(() => {});
+    fetch(`/api/tasks/${taskId}/files`)
+      .then(r => r.json())
+      .then(d => setFiles(d.files ?? []))
+      .catch(() => {});
   }, [taskId]);
+
+  async function updateNote(noteId: string, body: string) {
+    const res = await fetch(`/api/tasks/${taskId}/notes/${noteId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error);
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, body } : n));
+  }
+
+  async function deleteNote(noteId: string) {
+    const res = await fetch(`/api/tasks/${taskId}/notes/${noteId}`, { method: "DELETE" });
+    if (res.ok) setNotes(prev => prev.filter(n => n.id !== noteId));
+  }
+
+  async function uploadFile(file: File) {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/tasks/${taskId}/files`, { method: "POST", body: fd });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Upload failed");
+      setFiles(prev => [d.file, ...prev]);
+    } catch (e: any) {
+      alert(e.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteFile(fileId: string) {
+    const res = await fetch(`/api/tasks/${taskId}/files/${fileId}`, { method: "DELETE" });
+    if (res.ok) setFiles(prev => prev.filter(f => f.id !== fileId));
+  }
 
   async function saveNote() {
     if (!noteInput.trim()) return;
@@ -794,14 +853,84 @@ export default function CandidateDetailPage() {
                 {notes.length > 0 && (
                   <div className="space-y-2 pt-2">
                     {notes.map(n => (
-                      <div key={n.id} className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5">
-                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{n.body}</p>
-                        <p className="text-[10px] text-muted-foreground/70">
-                          {n.authorEmail || "Reviewer"} · {new Date(n.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                      </div>
+                      <NoteCard key={n.id} note={n} onUpdate={updateNote} onDelete={deleteNote} />
                     ))}
                   </div>
+                )}
+              </div>
+            </section>
+
+            {/* Attachments */}
+            <section>
+              <SectionLabel icon={<Paperclip className="h-3.5 w-3.5 text-muted-foreground" />}>
+                Attachments
+              </SectionLabel>
+              <div className="mt-3 space-y-1.5">
+                {/* Upload button */}
+                <label className={cn(
+                  "flex items-center justify-center gap-2 h-8 rounded-lg border border-dashed border-border/60",
+                  "text-xs text-muted-foreground cursor-pointer transition-colors",
+                  "hover:border-primary/40 hover:text-primary hover:bg-primary/5",
+                  uploading && "opacity-50 pointer-events-none",
+                )}>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) uploadFile(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  {uploading
+                    ? <><Loader2 className="h-3 w-3 animate-spin" />Uploading…</>
+                    : <><Paperclip className="h-3 w-3" />Attach file</>}
+                </label>
+
+                {/* Original resume — read-only */}
+                {task.hasResume && (
+                  <a
+                    href={`/api/tasks/${task.id}/resume`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 hover:bg-muted/40 transition-colors group"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-xs text-foreground flex-1 truncate">Original Resume</span>
+                    <Download className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0" />
+                  </a>
+                )}
+
+                {/* Uploaded files */}
+                {files.map(f => (
+                  <div key={f.id} className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 group">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-foreground truncate">{f.fileName}</p>
+                      <p className="text-[10px] text-muted-foreground/60">{formatFileSize(f.fileSize)}</p>
+                    </div>
+                    <a
+                      href={`/api/tasks/${taskId}/files/${f.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+                      title="Download"
+                    >
+                      <Download className="h-3 w-3" />
+                    </a>
+                    <button
+                      onClick={() => deleteFile(f.id)}
+                      className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 shrink-0 transition-all"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+
+                {!task.hasResume && files.length === 0 && !uploading && (
+                  <p className="text-[11px] text-muted-foreground/50 text-center py-1">No attachments yet</p>
                 )}
               </div>
             </section>
@@ -1038,6 +1167,92 @@ function EditableField({
           </div>
         </div>
       ) : content}
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function NoteCard({
+  note,
+  onUpdate,
+  onDelete,
+}: {
+  note: Note;
+  onUpdate: (id: string, body: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editBody, setEditBody] = useState(note.body);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!editBody.trim() || editBody === note.body) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await onUpdate(note.id, editBody.trim());
+      setEditing(false);
+    } catch {
+      // keep editing state open on failure
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5 group relative">
+      {editing ? (
+        <div className="space-y-2">
+          <Textarea
+            autoFocus
+            value={editBody}
+            onChange={e => setEditBody(e.target.value)}
+            rows={3}
+            className="text-xs resize-none bg-background border-border/60"
+            onKeyDown={e => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
+              if (e.key === "Escape") { setEditBody(note.body); setEditing(false); }
+            }}
+          />
+          <div className="flex gap-1.5">
+            <Button size="sm" className="h-6 text-xs px-2.5" disabled={saving || !editBody.trim()} onClick={save}>
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => { setEditBody(note.body); setEditing(false); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap pr-6">{note.body}</p>
+          <p className="text-[10px] text-muted-foreground/70">
+            {note.authorEmail || "Reviewer"} · {fmtTime(note.createdAt)}
+          </p>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="absolute top-2 right-2 h-5 w-5 rounded flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-all">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-28">
+              <DropdownMenuItem onClick={() => setEditing(true)} className="text-xs gap-2 cursor-pointer">
+                <Pencil className="h-3 w-3" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onDelete(note.id)}
+                className="text-xs gap-2 cursor-pointer text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-3 w-3" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      )}
     </div>
   );
 }

@@ -40,6 +40,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Props {
   requisitionId: string;
@@ -124,12 +131,35 @@ function dialogCopy(
   }
 }
 
+const REJECT_REASONS = [
+  "Not a fit",
+  "Overqualified",
+  "Underqualified",
+  "Salary mismatch",
+  "Location constraint",
+  "No response",
+  "Failed interview",
+  "Other",
+];
+
+const ARCHIVE_REASONS = [
+  "Position filled",
+  "On hold",
+  "Budget freeze",
+  "Candidate withdrew",
+  "Duplicate profile",
+  "Not a fit",
+  "Other",
+];
+
 export function PipelineTab({ requisitionId }: Props) {
   const [stages, setStages] = useState<StageMap>({});
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [stageScope, setStageScope] = useState<CandidateStage | "ALL">("ALL");
+  const [transitionReason, setTransitionReason] = useState("");
   const [archiveFilter, setArchiveFilter] = useState<"ALL" | CandidateStage>("ALL");
 
   // Bulk selection
@@ -218,7 +248,7 @@ export function PipelineTab({ requisitionId }: Props) {
   }
 
   // Core API call — called after any confirmation gates have passed.
-  async function commitStageChange(taskId: string, fromStage: CandidateStage, newStage: CandidateStage, movedTask: PipelineTask) {
+  async function commitStageChange(taskId: string, fromStage: CandidateStage, newStage: CandidateStage, movedTask: PipelineTask, reason?: string) {
     setStages(prev => {
       const next = { ...prev };
       next[fromStage] = (next[fromStage] ?? []).filter(t => t.id !== taskId);
@@ -229,7 +259,7 @@ export function PipelineTab({ requisitionId }: Props) {
     try {
       const res = await fetch(
         `/api/requisitions/${requisitionId}/candidates/${taskId}`,
-        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: newStage }) },
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: newStage, ...(reason ? { reason } : {}) }) },
       );
       if (!res.ok) {
         const { status, message } = await readStageError(res);
@@ -334,7 +364,7 @@ export function PipelineTab({ requisitionId }: Props) {
   // Server processes each task in its own transaction and returns per-task
   // outcomes; UI reverts only the cards that failed.
   // Core bulk API — called after any confirmation gates have passed.
-  async function executeBulkMove(taskIds: string[], newStage: CandidateStage) {
+  async function executeBulkMove(taskIds: string[], newStage: CandidateStage, reason?: string) {
     // Snapshot original stage per task so we can selectively revert failures.
     // Same reasoning as handleStageChange: we don't send `expected` (per-task
     // If-Match) because the only realistic "concurrent edit" is the system's
@@ -375,7 +405,7 @@ export function PipelineTab({ requisitionId }: Props) {
       const res = await fetch(`/api/requisitions/${requisitionId}/candidates/bulk-stage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskIds, stage: newStage }),
+        body: JSON.stringify({ taskIds, stage: newStage, ...(reason ? { reason } : {}) }),
       });
       if (!res.ok) {
         // Hard failure — revert everything.
@@ -566,15 +596,23 @@ export function PipelineTab({ requisitionId }: Props) {
     }
   }
 
-  const filteredStages = useMemo<StageMap>(() => {
-    if (!query) return stages;
+  // Reset scope whenever the query is cleared so the board returns to normal.
+  useEffect(() => { if (!query) setStageScope("ALL"); }, [query]);
+
+  // matchCounts: per-stage hit count for the current query (used by scope chips).
+  // filteredStages: applies both query and scope — what each column actually renders.
+  const { filteredStages, matchCounts } = useMemo(() => {
+    if (!query) return { filteredStages: stages, matchCounts: null };
+
+    const counts: Partial<Record<CandidateStage, number>> = {};
     const out: StageMap = {};
     for (const stage of PIPELINE_STAGES) {
-      const tasks = stages[stage];
-      if (tasks) out[stage] = tasks.filter(t => matchesQuery(t, query));
+      const matched = (stages[stage] ?? []).filter(t => matchesQuery(t, query));
+      counts[stage] = matched.length;
+      out[stage] = (stageScope !== "ALL" && stageScope !== stage) ? [] : matched;
     }
-    return out;
-  }, [stages, query]);
+    return { filteredStages: out, matchCounts: counts };
+  }, [stages, query, stageScope]);
 
   const archiveRows = useMemo(() => {
     const rows: PipelineTask[] = [];
@@ -627,35 +665,76 @@ export function PipelineTab({ requisitionId }: Props) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="Search name, title, company..."
-                className="pl-8 pr-8 h-8 text-sm w-64"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label="Clear search"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
+          <div className="flex flex-col items-end gap-1.5">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search name, title, company..."
+                  className="pl-8 pr-8 h-8 text-sm w-64"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={fetchPipeline}
+                className="gap-1.5 text-xs text-muted-foreground h-8 px-2"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={fetchPipeline}
-              className="gap-1.5 text-xs text-muted-foreground h-8 px-2"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
+
+            {/* Stage scope chips — only visible while a query is active */}
+            {query && matchCounts && (
+              <div className="flex items-center gap-1 flex-wrap justify-end">
+                <button
+                  onClick={() => setStageScope("ALL")}
+                  className={cn(
+                    "h-5.5 px-2 rounded-full text-[11px] font-medium border transition-colors",
+                    stageScope === "ALL"
+                      ? "bg-foreground text-background border-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30",
+                  )}
+                >
+                  All&nbsp;
+                  <span className="opacity-70">
+                    {ACTIVE_STAGES.reduce((n, s) => n + (matchCounts[s] ?? 0), 0)}
+                  </span>
+                </button>
+                {ACTIVE_STAGES.map(stage => {
+                  const count = matchCounts[stage] ?? 0;
+                  if (count === 0) return null;
+                  return (
+                    <button
+                      key={stage}
+                      onClick={() => setStageScope(stage)}
+                      className={cn(
+                        "h-5.5 px-2 rounded-full text-[11px] font-medium border transition-colors flex items-center gap-1",
+                        stageScope === stage
+                          ? "bg-foreground text-background border-foreground"
+                          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30",
+                      )}
+                    >
+                      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", STAGE_CONFIG[stage].dot)} />
+                      {STAGE_CONFIG[stage].label}&nbsp;<span className="opacity-70">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -667,6 +746,7 @@ export function PipelineTab({ requisitionId }: Props) {
                 stage={stage}
                 config={STAGE_CONFIG[stage]}
                 tasks={filteredStages[stage] ?? []}
+                totalCount={(stages[stage] ?? []).length}
                 onStageChange={handleStageChange}
                 draggingId={draggingId}
                 requisitionId={requisitionId}
@@ -728,16 +808,14 @@ export function PipelineTab({ requisitionId }: Props) {
       {/* Destructive-transition confirmation dialog */}
       <Dialog
         open={!!pendingTransition}
-        onOpenChange={open => { if (!open) setPendingTransition(null); }}
+        onOpenChange={open => { if (!open) { setPendingTransition(null); setTransitionReason(""); } }}
       >
         <DialogContent className="max-w-sm">
           {pendingTransition && (() => {
             const subject =
               pendingTransition.kind === "single"
                 ? pendingTransition.candidateName
-                : pendingTransition.kind === "bulk"
-                ? `${pendingTransition.totalCount} candidate${pendingTransition.totalCount !== 1 ? "s" : ""}`
-                : "this candidate";
+                : `${pendingTransition.totalCount} candidate${pendingTransition.totalCount !== 1 ? "s" : ""}`;
             const hasActive =
               pendingTransition.kind === "single"
                 ? pendingTransition.hasActiveOutreach
@@ -747,6 +825,10 @@ export function PipelineTab({ requisitionId }: Props) {
               pendingTransition.kind === "bulk" && pendingTransition.activeCount > 0
                 ? ` (${pendingTransition.activeCount} have active outreach)`
                 : "";
+            const needsReason =
+              pendingTransition.toStage === "REJECTED" || pendingTransition.toStage === "ARCHIVED";
+            const reasonOptions =
+              pendingTransition.toStage === "REJECTED" ? REJECT_REASONS : ARCHIVE_REASONS;
             return (
               <>
                 <DialogHeader>
@@ -755,8 +837,25 @@ export function PipelineTab({ requisitionId }: Props) {
                     {copy.body}{bulkSuffix}
                   </DialogDescription>
                 </DialogHeader>
+
+                {needsReason && (
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-xs text-muted-foreground font-medium">Reason <span className="opacity-50">(optional)</span></p>
+                    <Select value={transitionReason} onValueChange={setTransitionReason}>
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select a reason…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {reasonOptions.map(r => (
+                          <SelectItem key={r} value={r} className="text-sm">{r}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <DialogFooter className="gap-2 sm:gap-0">
-                  <Button variant="outline" size="sm" onClick={() => setPendingTransition(null)}>
+                  <Button variant="outline" size="sm" onClick={() => { setPendingTransition(null); setTransitionReason(""); }}>
                     Cancel
                   </Button>
                   <Button
@@ -764,13 +863,15 @@ export function PipelineTab({ requisitionId }: Props) {
                     size="sm"
                     onClick={async () => {
                       const p = pendingTransition;
+                      const r = transitionReason || undefined;
                       setPendingTransition(null);
+                      setTransitionReason("");
                       if (!p) return;
                       if (p.kind === "single") {
                         const movedTask = stages[p.fromStage]?.find(t => t.id === p.taskId);
-                        if (movedTask) await commitStageChange(p.taskId, p.fromStage, p.toStage, movedTask);
+                        if (movedTask) await commitStageChange(p.taskId, p.fromStage, p.toStage, movedTask, r);
                       } else {
-                        await executeBulkMove(p.taskIds, p.toStage);
+                        await executeBulkMove(p.taskIds, p.toStage, r);
                       }
                     }}
                   >

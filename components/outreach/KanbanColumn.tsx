@@ -10,6 +10,7 @@ interface Props {
   readonly stage: CandidateStage;
   readonly config: StageConfig;
   readonly tasks: PipelineTask[];
+  readonly totalCount: number;
   readonly onStageChange: (taskId: string, newStage: CandidateStage) => void;
   readonly draggingId: string | null;
   readonly requisitionId: string;
@@ -24,6 +25,7 @@ export function KanbanColumn({
   stage,
   config,
   tasks,
+  totalCount,
   onStageChange,
   draggingId,
   requisitionId,
@@ -101,7 +103,7 @@ export function KanbanColumn({
           "rounded-full border px-1.5 min-w-5.5 h-5.5",
           config.headerBg, config.headerText, config.border
         )}>
-          {tasks.length}
+          {tasks.length < totalCount ? `${tasks.length}/${totalCount}` : tasks.length}
         </span>
       </div>
 

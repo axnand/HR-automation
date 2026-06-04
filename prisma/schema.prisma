@@ -248,6 +248,7 @@ model Task {
   channelThreads   ChannelThread[]
   stageEvents      StageEvent[]
   notes            Note[]
+  files            CandidateFile[]
   contact          CandidateContact?
   overrides        ScoreOverride[]
   duplicatesAsA    DuplicatePair[]   @relation("DuplicatePairA")
@@ -563,6 +564,27 @@ model ScoreOverride {
 
   @@unique([taskId, paramKey])
   @@index([taskId])
+}
+
+// Per-candidate manual file attachments — recruiter-uploaded resumes, portfolios,
+// assessments, etc. Stored in S3 under candidate-attachments/{taskId}/{uuid}_{name}.
+// Soft-deleted (deletedAt) so storage keys can be cleaned up separately if needed.
+// Hard-deletion of the S3 object is a separate async operation (not yet implemented).
+model CandidateFile {
+  id         String    @id @default(cuid())
+  taskId     String
+  fileName   String              // original filename shown to user
+  mimeType   String              // used when serving the download
+  storageKey String              // S3 object key — never exposed to frontend directly
+  fileSize   Int                 // bytes
+  uploadedBy String    @default("")
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([taskId, deletedAt])
 }
 
 model CandidateProfile {
