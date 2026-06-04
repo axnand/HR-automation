@@ -26,6 +26,7 @@ import {
   cancelInvitation,
 } from "@/lib/services/unipile.service";
 import { buildVars, renderTemplate } from "@/lib/outreach/render-template";
+import { injectInterviewLinkForConfig } from "@/lib/interview/followup-link";
 import { recomputeTaskStage } from "./stage-rollup";
 import {
   matchRule,
@@ -328,6 +329,12 @@ export async function processThread(threadId: string): Promise<void> {
   const contact = thread.task.contact ?? null;
 
   const config = thread.channel.config as Record<string, unknown>;
+
+  // Trigger C — if any template here uses {{interviewLink}}, mint/reuse a session
+  // and inject the link into `vars` before the channel handlers render. Cheap
+  // no-op for threads that don't use the variable. (§6)
+  await injectInterviewLinkForConfig(thread.taskId, config, vars);
+
   const candidateLabel = [vars.name, vars.role && vars.company ? `${vars.role} @ ${vars.company}` : (vars.company || vars.role)].filter(Boolean).join(", ") || threadId.slice(-6);
   const tag = `[ThreadWorker ${thread.channelType} "${candidateLabel}"]`;
   console.log(`${tag} Processing — status=${thread.status} taskId=${thread.taskId} via="${account.name}"`);

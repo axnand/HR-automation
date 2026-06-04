@@ -18,6 +18,7 @@ interface Props {
   readonly onColumnSelectAll: (taskIds: string[]) => void;
   readonly onColumnDeselectAll: (taskIds: string[]) => void;
   readonly showCheckboxes: boolean;
+  readonly onSendInterview?: (taskId: string) => void;
 }
 
 export function KanbanColumn({
@@ -32,6 +33,7 @@ export function KanbanColumn({
   onColumnSelectAll,
   onColumnDeselectAll,
   showCheckboxes,
+  onSendInterview,
 }: Props) {
   const [isOver, setIsOver] = useState(false);
   const checkboxRef = useRef<HTMLInputElement>(null);
@@ -129,6 +131,7 @@ export function KanbanColumn({
                 isSelected={selectedIds.has(task.id)}
                 onSelect={onSelect}
                 showCheckbox={showCheckboxes || someSelected}
+                onSendInterview={onSendInterview}
               />
             ))
           )}

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Users, Cpu, Plus, Pencil, Trash2, Zap, CheckCircle2, XCircle,
-  ChevronLeft, Info, Power, PowerOff, Server, Star, Webhook, RefreshCw, Trash,
+  ChevronLeft, Info, Power, PowerOff, Server, Star, Webhook, RefreshCw, Trash, Video, Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,7 +135,145 @@ const PROVIDER_TYPE_LABELS: Record<string, string> = {
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"accounts" | "models" | "webhooks">("accounts");
+  const [activeTab, setActiveTab] = useState<"accounts" | "models" | "webhooks" | "interview">("accounts");
+
+  // ── Interview config state ──
+  const [interviewCfg, setInterviewCfg] = useState<{
+    globalQuestions: Array<{ id: string; order: number; text: string; mustAsk?: boolean; idealAnswer?: string; weight?: number }>;
+    defaultAgentName: string;
+  }>({ globalQuestions: [], defaultAgentName: "HR-Recruiter-Agent" });
+  const [globalTemplateSubject, setGlobalTemplateSubject] = useState("");
+  const [globalTemplateBody, setGlobalTemplateBody] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [savedTemplate, setSavedTemplate] = useState(false);
+  const interviewBodyRef = useRef<HTMLTextAreaElement>(null);
+  const INTERVIEW_LINK_TOKEN = "{{interviewLink}}";
+  const globalTemplateHasLink = /\{\{\s*interviewLink\s*\}\}/i.test(globalTemplateBody);
+  const [interviewCfgLoading, setInterviewCfgLoading] = useState(false);
+  const [interviewCfgSaving, setInterviewCfgSaving] = useState(false);
+  const [interviewCfgSaved, setInterviewCfgSaved] = useState(false);
+  const [interviewCfgError, setInterviewCfgError] = useState<string | null>(null);
+  const [newQuestionText, setNewQuestionText] = useState("");
+  const [newQuestionMust, setNewQuestionMust] = useState(false);
+
+  const fetchInterviewCfg = useCallback(async () => {
+    setInterviewCfgLoading(true);
+    try {
+      const res = await fetch("/api/interview/config");
+      if (res.ok) {
+        const data = await res.json();
+        setInterviewCfg({
+          globalQuestions: Array.isArray(data.globalQuestions) ? data.globalQuestions : [],
+          defaultAgentName: data.defaultAgentName ?? "HR-Recruiter-Agent",
+        });
+        const tmpl = data.defaultMessageTemplate || {};
+        setGlobalTemplateSubject(typeof tmpl.subject === "string" ? tmpl.subject : "");
+        setGlobalTemplateBody(typeof tmpl.body === "string" ? tmpl.body : "");
+      }
+    } catch { /* leave defaults */ } finally {
+      setInterviewCfgLoading(false);
+    }
+  }, []);
+
+  async function saveInterviewCfg(patch: typeof interviewCfg) {
+    setInterviewCfgSaving(true);
+    setInterviewCfgError(null);
+    try {
+      const res = await fetch("/api/interview/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setInterviewCfgError(d.error || `Save failed (${res.status})`);
+        setTimeout(() => setInterviewCfgError(null), 4000);
+        return;
+      }
+      setInterviewCfgSaved(true);
+      setTimeout(() => setInterviewCfgSaved(false), 2000);
+    } catch {
+      setInterviewCfgError("Network error — changes not saved");
+      setTimeout(() => setInterviewCfgError(null), 4000);
+    } finally {
+      setInterviewCfgSaving(false);
+    }
+  }
+
+  function addGlobalQuestion() {
+    if (!newQuestionText.trim()) return;
+    const next = {
+      ...interviewCfg,
+      globalQuestions: [
+        ...interviewCfg.globalQuestions,
+        {
+          id: `gq_${Date.now()}`,
+          order: interviewCfg.globalQuestions.length + 1,
+          text: newQuestionText.trim(),
+          mustAsk: newQuestionMust,
+          weight: 1.0,
+        },
+      ],
+    };
+    setInterviewCfg(next);
+    saveInterviewCfg(next);
+    setNewQuestionText("");
+    setNewQuestionMust(false);
+  }
+
+  function removeGlobalQuestion(id: string) {
+    const next = {
+      ...interviewCfg,
+      globalQuestions: interviewCfg.globalQuestions.filter(q => q.id !== id),
+    };
+    setInterviewCfg(next);
+    saveInterviewCfg(next);
+  }
+
+  function insertInterviewLinkToken() {
+    const el = interviewBodyRef.current;
+    if (!el) {
+      setGlobalTemplateBody(b => (b ? `${b} ${INTERVIEW_LINK_TOKEN}` : INTERVIEW_LINK_TOKEN));
+      return;
+    }
+    const start = el.selectionStart ?? globalTemplateBody.length;
+    const end = el.selectionEnd ?? globalTemplateBody.length;
+    setGlobalTemplateBody(globalTemplateBody.slice(0, start) + INTERVIEW_LINK_TOKEN + globalTemplateBody.slice(end));
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + INTERVIEW_LINK_TOKEN.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  async function saveGlobalTemplate() {
+    if (globalTemplateBody.trim() && !globalTemplateHasLink) return;
+    setSavingTemplate(true);
+    setInterviewCfgError(null);
+    try {
+      const defaultMessageTemplate = globalTemplateBody.trim()
+        ? { subject: globalTemplateSubject.trim() || undefined, body: globalTemplateBody }
+        : {};
+      const res = await fetch("/api/interview/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultMessageTemplate }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setInterviewCfgError(d.error || `Save failed (${res.status})`);
+        setTimeout(() => setInterviewCfgError(null), 4000);
+        return;
+      }
+      setSavedTemplate(true);
+      setTimeout(() => setSavedTemplate(false), 2000);
+    } catch {
+      setInterviewCfgError("Network error — changes not saved");
+      setTimeout(() => setInterviewCfgError(null), 4000);
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
 
   // ── Webhooks state ──
   const [webhooks, setWebhooks] = useState<any[]>([]);
@@ -540,9 +678,10 @@ export default function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => {
-        const tab = v as "accounts" | "models" | "webhooks";
+        const tab = v as "accounts" | "models" | "webhooks" | "interview";
         setActiveTab(tab);
         if (tab === "webhooks") fetchWebhooks();
+        if (tab === "interview") fetchInterviewCfg();
       }}>
         <TabsList>
           <TabsTrigger value="accounts" className="gap-2">
@@ -556,6 +695,10 @@ export default function SettingsPage() {
           <TabsTrigger value="webhooks" className="gap-2">
             <Webhook className="h-4 w-4" />
             Webhooks
+          </TabsTrigger>
+          <TabsTrigger value="interview" className="gap-2">
+            <Video className="h-4 w-4" />
+            Interview
           </TabsTrigger>
         </TabsList>
 
@@ -1308,6 +1451,173 @@ export default function SettingsPage() {
                   })}
                 </ul>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ═══════════════ INTERVIEW ═══════════════ */}
+        <TabsContent value="interview" className="mt-5 space-y-5">
+          <Card>
+            <div className="px-6 py-4 border-b border-border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Video className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-semibold">Global Interview Questions</span>
+                </div>
+                <span className="text-xs text-muted-foreground">{interviewCfg.globalQuestions.length} question{interviewCfg.globalQuestions.length !== 1 ? "s" : ""}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                These questions are asked in every interview regardless of role. Per-role questions are configured on each role&apos;s Interview tab.
+              </p>
+            </div>
+            <CardContent className="p-5 space-y-3">
+              {interviewCfgError && <AlertBanner success={false} message={interviewCfgError} />}
+              {interviewCfgLoading ? (
+                <div className="text-sm text-muted-foreground">Loading…</div>
+              ) : interviewCfg.globalQuestions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No global questions yet. Add one below.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {interviewCfg.globalQuestions.map((q, i) => (
+                    <li key={q.id} className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                      <span className="text-xs font-mono text-muted-foreground mt-0.5 shrink-0 w-4">{i + 1}.</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground">{q.text}</p>
+                        {q.mustAsk && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium">
+                            Must ask
+                          </span>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                        onClick={() => removeGlobalQuestion(q.id)}
+                        title="Remove question"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <Separator />
+
+              <div className="space-y-2">
+                <Label className="text-xs">Add global question</Label>
+                <Input
+                  placeholder="e.g. Tell me about yourself…"
+                  value={newQuestionText}
+                  onChange={e => setNewQuestionText(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addGlobalQuestion(); } }}
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="mustAsk"
+                    checked={newQuestionMust}
+                    onChange={e => setNewQuestionMust(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-primary"
+                  />
+                  <label htmlFor="mustAsk" className="text-xs text-muted-foreground cursor-pointer">Must ask (agent cannot skip this question)</label>
+                </div>
+                <Button
+                  onClick={addGlobalQuestion}
+                  disabled={!newQuestionText.trim() || interviewCfgSaving}
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {interviewCfgSaving ? "Saving…" : interviewCfgSaved ? <><Check className="h-3 w-3" /> Saved</> : "Add Question"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <div className="px-6 py-4 border-b border-border">
+              <span className="text-sm font-semibold">Default Interview Message</span>
+              <p className="text-xs text-muted-foreground mt-1">
+                The org-wide message sent with the interview link, used for any role that doesn&apos;t set its own
+                (job page → Interview tab). Variables: <code>{"{{firstName}}"}</code>, <code>{"{{name}}"}</code>,{" "}
+                <code>{"{{role}}"}</code>, and the required <code>{INTERVIEW_LINK_TOKEN}</code>.
+              </p>
+            </div>
+            <CardContent className="p-5 space-y-3">
+              <div>
+                <Label className="text-xs">Subject (email only)</Label>
+                <Input
+                  value={globalTemplateSubject}
+                  onChange={e => setGlobalTemplateSubject(e.target.value)}
+                  placeholder="Interview for the {{role}} role"
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Message body</Label>
+                  <button
+                    type="button"
+                    onClick={insertInterviewLinkToken}
+                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80"
+                  >
+                    Insert interview link
+                  </button>
+                </div>
+                <textarea
+                  ref={interviewBodyRef}
+                  value={globalTemplateBody}
+                  onChange={e => setGlobalTemplateBody(e.target.value)}
+                  rows={7}
+                  placeholder={`Hi {{firstName}},\n\nWe'd love for you to take a short interview: ${INTERVIEW_LINK_TOKEN}`}
+                  className="mt-1.5 w-full rounded-md border border-border bg-background p-2.5 font-mono text-xs"
+                />
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[11px] text-muted-foreground">
+                    <code>{INTERVIEW_LINK_TOKEN}</code> is where each candidate&apos;s link is inserted. Leave blank to use the built-in default.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {savedTemplate && (
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <Check className="h-3 w-3" /> Saved
+                      </span>
+                    )}
+                    <Button size="sm" className="h-7 text-xs" onClick={saveGlobalTemplate} disabled={savingTemplate || (!!globalTemplateBody.trim() && !globalTemplateHasLink)}>
+                      {savingTemplate ? "Saving…" : "Save message"}
+                    </Button>
+                  </div>
+                </div>
+                {!!globalTemplateBody.trim() && !globalTemplateHasLink && (
+                  <p className="text-[11px] text-destructive mt-1">
+                    The message must include {INTERVIEW_LINK_TOKEN} — click “Insert interview link”.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <div className="px-6 py-4 border-b border-border">
+              <span className="text-sm font-semibold">Agent Name</span>
+              <p className="text-xs text-muted-foreground mt-1">The agent persona name sent to SCAI for all interviews.</p>
+            </div>
+            <CardContent className="p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <Input
+                  value={interviewCfg.defaultAgentName}
+                  onChange={e => setInterviewCfg(prev => ({ ...prev, defaultAgentName: e.target.value }))}
+                  onBlur={() => saveInterviewCfg(interviewCfg)}
+                  className="max-w-xs"
+                />
+                {interviewCfgSaved && (
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <Check className="h-3 w-3" /> Saved
+                  </span>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

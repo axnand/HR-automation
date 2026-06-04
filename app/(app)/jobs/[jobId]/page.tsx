@@ -13,7 +13,7 @@ import {
 import {
   ChevronRight, UserPlus, Users, LayoutDashboard, SlidersHorizontal, Settings2,
   Plus, Upload, Pause, Play, XCircle, Building2, Calendar, History, UploadCloud,
-  Kanban, AlertTriangle, Radio, RefreshCw,
+  Kanban, AlertTriangle, Radio, RefreshCw, Video,
 } from "lucide-react";
 import { CandidatesTab } from "@/components/jobs/CandidatesTab";
 import { DashboardTab } from "@/components/jobs/DashboardTab";
@@ -26,6 +26,7 @@ import { UploadResumesModal } from "@/components/jobs/UploadResumesModal";
 import { PipelineTab } from "@/components/jobs/PipelineTab";
 import { ResolutionsTab } from "@/components/jobs/ResolutionsTab";
 import { ChannelsTab } from "@/components/jobs/ChannelsTab";
+import { InterviewTab } from "@/components/jobs/InterviewTab";
 import { ResolveDuplicatesDrawer, type DuplicatePair } from "@/components/jobs/ResolveDuplicatesDrawer";
 
 interface RunSummary {
@@ -116,7 +117,7 @@ function combine(
   };
 }
 
-const VALID_TABS = new Set(["candidates", "pipeline", "channels", "history", "dashboard", "rules", "jd"]);
+const VALID_TABS = new Set(["candidates", "pipeline", "channels", "history", "dashboard", "rules", "jd", "interview"]);
 
 export default function RequisitionDetailPage() {
   const { jobId: requisitionId } = useParams<{ jobId: string }>();
@@ -139,6 +140,7 @@ export default function RequisitionDetailPage() {
   const [pollLoading, setPollLoading] = useState(false);
   const [pollCooldownSecs, setPollCooldownSecs] = useState<number>(0);
   const pollCooldownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [globalQuestions, setGlobalQuestions] = useState<any[]>([]);
 
   useEffect(() => {
     if (!data?.tasks) return;
@@ -449,7 +451,19 @@ export default function RequisitionDetailPage() {
       )}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden shadow-none">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => {
+          setActiveTab(v);
+          if (v === "interview") {
+            fetch("/api/interview/config")
+              .then(r => r.ok ? r.json() : null)
+              .then(d => { if (d) setGlobalQuestions(Array.isArray(d.globalQuestions) ? d.globalQuestions : []); })
+              .catch(() => {});
+          }
+        }}
+        className="flex-1 flex flex-col overflow-hidden shadow-none"
+      >
         <div className="border-b border-border px-8 shrink-0 bg-background shadow-none border-l-0 border-r-0">
           <TabsList className="bg-transparent h-auto p-0 gap-0">
             <TabsTrigger
@@ -502,6 +516,13 @@ export default function RequisitionDetailPage() {
             >
               <Settings2 className="h-4 w-4" />
               Settings
+            </TabsTrigger>
+            <TabsTrigger
+              value="interview"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground px-4 py-3 text-[13px] font-medium text-muted-foreground gap-2 h-11"
+            >
+              <Video className="h-4 w-4" />
+              Interview
             </TabsTrigger>
             {/* {data.failedCount > 0 && (
               <TabsTrigger
@@ -559,6 +580,15 @@ export default function RequisitionDetailPage() {
             requisitionId={requisitionId}
             initialConfig={data.config}
             initialTitle={data.title}
+            onSaved={fetchAll}
+          />
+        </TabsContent>
+
+        <TabsContent value="interview" forceMount className="flex-1 overflow-y-auto m-0 p-8 data-[state=inactive]:hidden">
+          <InterviewTab
+            requisitionId={requisitionId}
+            initialConfig={data.config}
+            globalQuestions={globalQuestions}
             onSaved={fetchAll}
           />
         </TabsContent>

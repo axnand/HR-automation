@@ -5,6 +5,10 @@ export interface TemplateVars {
   company: string;
   role: string;
   score: string;
+  // Phase 3 — the candidate interview URL. Empty for non-interview templates;
+  // interview senders override it with the minted /interview/<accessToken> link.
+  // See docs/interview-flow.md §6 (trigger C).
+  interviewLink: string;
 }
 
 export function buildVars(profile: any, analysis: any): TemplateVars {
@@ -37,7 +41,10 @@ export function buildVars(profile: any, analysis: any): TemplateVars {
   const duration = Date.now() - startTime; // Calculate duration
   console.log(`buildVars processing took ${duration}ms`); // Log duration
 
-  return { name: fullName, firstName, lastName, company, role, score };
+  // interviewLink defaults to "" — only interview senders have a link to inject
+  // (they spread { ...vars, interviewLink }). Non-interview templates never
+  // contain {{interviewLink}}, so the empty default is a harmless no-op there.
+  return { name: fullName, firstName, lastName, company, role, score, interviewLink: "" };
 }
 
 export function renderTemplate(template: string, vars: TemplateVars): string {
@@ -47,5 +54,6 @@ export function renderTemplate(template: string, vars: TemplateVars): string {
     .replace(/\{\{lastName\}\}/gi, vars.lastName)
     .replace(/\{\{company\}\}/gi, vars.company)
     .replace(/\{\{role\}\}/gi, vars.role)
-    .replace(/\{\{score\}\}/gi, vars.score);
+    .replace(/\{\{score\}\}/gi, vars.score)
+    .replace(/\{\{\s*interviewLink\s*\}\}/gi, vars.interviewLink ?? "");
 }

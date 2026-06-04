@@ -18,6 +18,7 @@
 import { prisma } from "@/lib/prisma";
 import { CandidateStage } from "@prisma/client";
 import { fanOutToChannels } from "@/lib/channels/fan-out";
+import { maybeAutoSendInterviewOnStage } from "@/lib/interview/auto-send";
 
 export const SYSTEM_DERIVED = new Set<CandidateStage>([
   CandidateStage.CONTACT_REQUESTED,
@@ -357,6 +358,16 @@ export async function applyStageTransition(input: ApplyTransitionInput): Promise
     ) {
       fanOutToChannels(taskId, updated.jobId).catch(err =>
         console.error("[applyStageTransition] fanOut failed:", err),
+      );
+    }
+
+    // Trigger A — entering INTERVIEW auto-sends the interview link IF the role
+    // opted in. Fire-and-forget (the pause already committed; the Unipile send is
+    // a network call that must not block the drag). Gated to a real entry into
+    // INTERVIEW (not a self-drag, not HIRED which also pauses). §6.
+    if (toStage === CandidateStage.INTERVIEW && fromStage !== CandidateStage.INTERVIEW) {
+      maybeAutoSendInterviewOnStage(taskId).catch(err =>
+        console.error("[applyStageTransition] interview auto-send failed:", err),
       );
     }
 

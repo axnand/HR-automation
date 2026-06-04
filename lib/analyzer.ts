@@ -1023,7 +1023,7 @@ export async function analyzeProfile(
       { role: "user", content: userPrompt },
     ],
     model,
-    { temperature: 0.1, max_tokens: 2000 },
+    { temperature: 0.1, max_tokens: 2000, response_format: { type: "json_object" } },
     config.aiProviderId
   );
 
