@@ -1,17 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveRequisitionId } from "@/lib/resolve-requisition";
-import { AccountType, ChannelType } from "@prisma/client";
+import { AccountType, CandidateStage, ChannelType } from "@prisma/client";
 import {
   validateLinkedInConfig,
   validateEmailConfig,
   validateWAConfig,
 } from "@/lib/channels/types";
+import { evaluateChannelForScore, parseScore } from "@/lib/channels/fan-out";
 
 export const dynamic = "force-dynamic";
 
+// Stages where a candidate is in the outreach lifecycle and should have a
+// thread on every matching channel. Excludes SOURCED (not shortlisted yet) and
+// the terminal/won stages (INTERVIEW/HIRED/REJECTED/ARCHIVED — manual decisions
+// where starting fresh cold outreach makes no sense).
+const BADGE_STAGES: CandidateStage[] = [
+  CandidateStage.SHORTLISTED,
+  CandidateStage.CONTACT_REQUESTED,
+  CandidateStage.CONNECTED,
+  CandidateStage.MESSAGED,
+  CandidateStage.REPLIED,
+];
+
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ requisitionId: string }> },
 ) {
   try {
@@ -27,7 +40,40 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ channels });
+    // Opt-in (?missing=1): annotate each ACTIVE channel with the number of
+    // outreach-lifecycle candidates that match its rules but have no live
+    // thread on it — i.e. exactly the threads a fan-out would create. This
+    // surfaces the "channel added after candidates were shortlisted" gap so a
+    // recruiter knows to fan out. Rule bands live in JSON config and can't be
+    // pushed into SQL, so we evaluate in JS. Paused channels report 0 (fan-out
+    // only targets ACTIVE channels). Skipped by default to keep the common
+    // channels fetch cheap.
+    if (req.nextUrl.searchParams.get("missing") !== "1") {
+      return NextResponse.json({ channels });
+    }
+
+    const tasks = await prisma.task.findMany({
+      where: { job: { requisitionId }, stage: { in: BADGE_STAGES } },
+      select: {
+        analysisResult: true,
+        channelThreads: {
+          where: { status: { not: "ARCHIVED" } },
+          select: { channelId: true },
+        },
+      },
+    });
+
+    const withCounts = channels.map(channel => {
+      if (channel.status !== "ACTIVE") return { ...channel, missingThreadCount: 0 };
+      let missing = 0;
+      for (const t of tasks) {
+        if (t.channelThreads.some(ct => ct.channelId === channel.id)) continue;
+        if (evaluateChannelForScore(channel, parseScore(t.analysisResult))) missing++;
+      }
+      return { ...channel, missingThreadCount: missing };
+    });
+
+    return NextResponse.json({ channels: withCounts });
   } catch (err) {
     console.error("[Channels] GET failed:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

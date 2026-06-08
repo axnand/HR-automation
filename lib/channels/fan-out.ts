@@ -55,12 +55,65 @@ async function pickAccountForChannel(
   return fallbackSendingAccountId;
 }
 
-export async function fanOutToChannels(taskId: string, jobId: string): Promise<void> {
+// Parse the candidate's score (0–100) out of the stored analysisResult JSON.
+// Missing or malformed analysis → score 0 (fail-soft: a bad analysis shouldn't
+// block fan-out entirely).
+export function parseScore(analysisResult: string | null, taskId?: string): number {
+  if (!analysisResult) return 0;
+  try {
+    const analysis = JSON.parse(analysisResult) as { scorePercent?: number };
+    return analysis?.scorePercent ?? 0;
+  } catch (err: any) {
+    console.error(`[fanOut] ${taskId ? `Task ${taskId} ` : ""}malformed analysisResult: ${err.message}`);
+    return 0;
+  }
+}
+
+// Decide whether a channel should get a thread for a candidate with the given
+// score, and if so, the rule key + follow-up count to stamp on the thread.
+// Returns null when no rule band matches (candidate is out of range).
+//
+// This is the SINGLE source of truth shared by fan-out (thread creation) and
+// the "missing threads" badge — so the badge count always equals exactly what
+// fan-out would create.
+export function evaluateChannelForScore(
+  channel: { type: ChannelType; config: unknown },
+  score: number,
+): { matchedRuleKey: string; followupsTotal: number } | null {
+  const config = channel.config as Record<string, unknown>;
+  if (channel.type === ChannelType.LINKEDIN) {
+    const cfg = config as unknown as LinkedInConfig;
+    const rule = matchRule(score, cfg.inviteRules ?? []);
+    return rule ? { matchedRuleKey: rule.key, followupsTotal: (cfg.followups ?? []).length } : null;
+  }
+  if (channel.type === ChannelType.EMAIL) {
+    const cfg = config as unknown as EmailConfig;
+    const rule = matchRule(score, cfg.emailRules ?? []);
+    return rule ? { matchedRuleKey: rule.key, followupsTotal: (cfg.followups ?? []).length } : null;
+  }
+  if (channel.type === ChannelType.WHATSAPP) {
+    const cfg = config as unknown as WAConfig;
+    const rule = matchRule(score, cfg.waRules ?? []);
+    return rule ? { matchedRuleKey: rule.key, followupsTotal: (cfg.followups ?? []).length } : null;
+  }
+  return null;
+}
+
+// Core fan-out: create the missing ChannelThreads for one task across every
+// ACTIVE channel whose rules match the candidate's score. Idempotent via
+// @@unique([taskId, channelId]). Does NOT trigger the outreach tick and does
+// NOT throw — it returns counts + failures so callers can decide how to react.
+// The bulk endpoint loops this and triggers the tick once at the end; the
+// single-task wrapper below triggers per call.
+export async function fanOutToChannelsCore(
+  taskId: string,
+  jobId: string,
+): Promise<{ created: number; channelCount: number; failures: Array<{ channelId: string; error: Error }> }> {
   const job = await prisma.job.findUnique({
     where: { id: jobId },
     select: { requisitionId: true },
   });
-  if (!job?.requisitionId) return;
+  if (!job?.requisitionId) return { created: 0, channelCount: 0, failures: [] };
 
   const [task, channels] = await Promise.all([
     prisma.task.findUnique({
@@ -81,48 +134,19 @@ export async function fanOutToChannels(taskId: string, jobId: string): Promise<v
     }),
   ]);
 
-  if (!task || channels.length === 0) return;
+  if (!task || channels.length === 0) return { created: 0, channelCount: channels.length, failures: [] };
 
-  let analysis: { scorePercent?: number } | null = null;
-  if (task.analysisResult) {
-    try {
-      analysis = JSON.parse(task.analysisResult as string);
-    } catch (err: any) {
-      console.error(`[fanOutToChannels] Task ${taskId} has malformed analysisResult: ${err.message}`);
-      // proceed with score=0 rather than crashing — a malformed analysis shouldn't block fan-out entirely
-    }
-  }
-  const score: number = analysis?.scorePercent ?? 0;
+  const score = parseScore(task.analysisResult, taskId);
   const existingChannelIds = new Set(task.channelThreads.map(t => t.channelId));
 
   const failures: Array<{ channelId: string; error: Error }> = [];
+  let created = 0;
 
   for (const channel of channels) {
     if (existingChannelIds.has(channel.id)) continue;
 
-    const config = channel.config as Record<string, unknown>;
-    let matchedRuleKey: string | null = null;
-    let followupsTotal = 0;
-
-    if (channel.type === ChannelType.LINKEDIN) {
-      const cfg = config as unknown as LinkedInConfig;
-      const rule = matchRule(score, cfg.inviteRules ?? []);
-      if (!rule) continue;
-      matchedRuleKey = rule.key;
-      followupsTotal = (cfg.followups ?? []).length;
-    } else if (channel.type === ChannelType.EMAIL) {
-      const cfg = config as unknown as EmailConfig;
-      const rule = matchRule(score, cfg.emailRules ?? []);
-      if (!rule) continue;
-      matchedRuleKey = rule.key;
-      followupsTotal = (cfg.followups ?? []).length;
-    } else if (channel.type === ChannelType.WHATSAPP) {
-      const cfg = config as unknown as WAConfig;
-      const rule = matchRule(score, cfg.waRules ?? []);
-      if (!rule) continue;
-      matchedRuleKey = rule.key;
-      followupsTotal = (cfg.followups ?? []).length;
-    }
+    const evaluated = evaluateChannelForScore(channel, score);
+    if (!evaluated) continue;
 
     // P1 #14 — pick a bound account at thread creation, so the worker has a
     // sticky account from the very first tick rather than re-resolving via
@@ -136,12 +160,13 @@ export async function fanOutToChannels(taskId: string, jobId: string): Promise<v
           taskId,
           channelId: channel.id,
           channelType: channel.type,
-          matchedRuleKey,
-          followupsTotal,
+          matchedRuleKey: evaluated.matchedRuleKey,
+          followupsTotal: evaluated.followupsTotal,
           nextActionAt: new Date(),
           ...(boundAccountId ? { accountId: boundAccountId } : {}),
         },
       });
+      created++;
     } catch (err: any) {
       // P2002 = unique([taskId, channelId]) — thread already exists, safe to skip
       if (err?.code === "P2002") continue;
@@ -150,13 +175,20 @@ export async function fanOutToChannels(taskId: string, jobId: string): Promise<v
     }
   }
 
+  return { created, channelCount: channels.length, failures };
+}
+
+export async function fanOutToChannels(taskId: string, jobId: string): Promise<void> {
+  const { created, channelCount, failures } = await fanOutToChannelsCore(taskId, jobId);
+
   // Kick the outreach-tick cron immediately — newly created threads have
   // nextActionAt=now() and would otherwise wait up to ~60s for the next tick.
-  triggerOutreach();
+  // Nothing created → nothing to kick.
+  if (created > 0) triggerOutreach();
 
   if (failures.length > 0) {
     throw new Error(
-      `fanOutToChannels: ${failures.length}/${channels.length} channel(s) failed for task ${taskId}: ` +
+      `fanOutToChannels: ${failures.length}/${channelCount} channel(s) failed for task ${taskId}: ` +
       failures.map(f => `${f.channelId}=${f.error.message}`).join("; ")
     );
   }

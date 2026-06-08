@@ -35,6 +35,9 @@ interface Channel {
   sendingAccount: Account | null;
   createdAt: string;
   _count: { threads: number };
+  // Populated only when fetched with ?missing=1: outreach-lifecycle candidates
+  // matching this channel's rules that have no live thread yet (ACTIVE only).
+  missingThreadCount?: number;
 }
 
 interface Props { requisitionId: string; }
@@ -202,7 +205,7 @@ export function ChannelsTab({ requisitionId }: Props) {
 
   const fetchChannels = useCallback(async () => {
     try {
-      const res = await fetch(`/api/requisitions/${requisitionId}/channels`);
+      const res = await fetch(`/api/requisitions/${requisitionId}/channels?missing=1`);
       const data = await res.json();
       setChannels(data.channels ?? []);
     } catch {
@@ -307,6 +310,9 @@ export function ChannelsTab({ requisitionId }: Props) {
       if (!res.ok) throw new Error();
       setChannels(prev => prev.map(c => c.id === channel.id ? { ...c, status: newStatus } : c));
       toast.success(newStatus === "ACTIVE" ? "Channel activated" : "Channel paused");
+      // Activating/pausing changes which candidates count as "missing" a thread
+      // on this channel — refresh the badge counts.
+      fetchChannels();
     } catch {
       toast.error("Failed to update channel status");
     } finally {
@@ -446,7 +452,18 @@ export function ChannelsTab({ requisitionId }: Props) {
                       {channel.sendingAccount?.name || channel.sendingAccount?.accountId || <span className="italic opacity-50">none</span>}
                     </td>
                     <td className="px-4 py-3 text-xs font-medium text-foreground">
-                      {channel._count.threads}
+                      <div className="flex items-center gap-2">
+                        <span>{channel._count.threads}</span>
+                        {channel.status === "ACTIVE" && (channel.missingThreadCount ?? 0) > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] h-5 px-2 rounded-full border-amber-500/30 bg-amber-500/10 text-amber-500 cursor-default"
+                            title="Shortlisted candidates that match this channel's rules but have no thread yet. Select them in the Pipeline and click 'Fan out to channels' to start outreach."
+                          >
+                            {channel.missingThreadCount} missing
+                          </Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
