@@ -87,12 +87,6 @@ export function BulkAddModal({ open, onClose, requisitionId, onSuccess, onDuplic
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Future: Document upload zone */}
-          <div className="rounded-lg border-2 border-dashed border-border p-6 text-center opacity-40 cursor-not-allowed">
-            <p className="text-sm text-muted-foreground">Document upload (PDF/DOCX/ZIP)</p>
-            <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
-          </div>
-
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label>LinkedIn URLs <span className="text-muted-foreground font-normal">(one per line)</span></Label>
