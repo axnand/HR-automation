@@ -254,16 +254,16 @@ export function PipelineListView({
         </span>
       </FilterBar>
 
-      <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-border/60 bg-background">
+      <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-border/40 bg-background">
         {rows.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
             No candidates match these filters
           </div>
         ) : (
           <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-10 h-10">
+            <TableHeader className="sticky top-0 z-10 bg-muted/30 backdrop-blur-sm [&_th]:h-9 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-muted-foreground/70">
+              <TableRow className="hover:bg-transparent border-border/40">
+                <TableHead className="w-10 px-4">
                   <input
                     type="checkbox"
                     aria-label="Select all"
@@ -274,19 +274,19 @@ export function PipelineListView({
                     onChange={e =>
                       e.target.checked ? onSelectAll(rowIds) : onDeselectAll(rowIds)
                     }
-                    className="h-3.5 w-3.5 cursor-pointer accent-primary rounded"
+                    className="h-3.5 w-3.5 cursor-pointer accent-primary rounded align-middle"
                   />
                 </TableHead>
-                <TableHead className="h-10">Candidate</TableHead>
-                <TableHead className="h-10">Current org</TableHead>
-                <TableHead className="h-10 w-20">Exp</TableHead>
-                <TableHead className="h-10">Location</TableHead>
-                <TableHead className="h-10 w-32">Stage</TableHead>
-                <TableHead className="h-10 w-16 text-right">Score</TableHead>
-                <TableHead className="h-10 w-20 text-right">Links</TableHead>
+                <TableHead>Candidate</TableHead>
+                <TableHead>Current org</TableHead>
+                <TableHead className="w-20">Exp</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead className="w-32">Stage</TableHead>
+                <TableHead className="w-16 text-right">Score</TableHead>
+                <TableHead className="w-20 text-right pr-4">Links</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="[&_tr]:border-border/30 [&_tr:last-child]:border-0">
               {rows.map(task => (
                 <PipelineRow
                   key={task.id}
@@ -364,29 +364,31 @@ function PipelineRow({
         </div>
       </TableCell>
 
-      <TableCell className="py-2.5 text-sm text-muted-foreground">
-        <span className="truncate block max-w-[160px]">{task.currentOrg || "—"}</span>
+      <TableCell className="py-2.5 text-sm text-foreground/80">
+        <span className="truncate block max-w-[160px]">
+          {task.currentOrg || <span className="text-muted-foreground/40">—</span>}
+        </span>
       </TableCell>
 
-      <TableCell className="py-2.5 text-sm text-muted-foreground whitespace-nowrap">
+      <TableCell className="py-2.5 text-sm text-foreground/80 whitespace-nowrap">
         {task.totalExperienceYears !== null ? (
           <span className="flex items-center gap-1.5">
-            <Briefcase className="h-3 w-3 shrink-0" />
+            <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground/50" />
             {task.totalExperienceYears} yrs
           </span>
         ) : (
-          "—"
+          <span className="text-muted-foreground/40">—</span>
         )}
       </TableCell>
 
-      <TableCell className="py-2.5 text-sm text-muted-foreground">
+      <TableCell className="py-2.5 text-sm text-foreground/80">
         {task.location ? (
           <span className="flex items-center gap-1.5 min-w-0">
-            <MapPin className="h-3 w-3 shrink-0" />
+            <MapPin className="h-3 w-3 shrink-0 text-muted-foreground/50" />
             <span className="truncate max-w-[160px]">{task.location}</span>
           </span>
         ) : (
-          "—"
+          <span className="text-muted-foreground/40">—</span>
         )}
       </TableCell>
 
@@ -417,11 +419,11 @@ function PipelineRow({
               href={task.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-[#0a66c2] hover:bg-muted transition-colors"
+              className="h-7 w-7 rounded-md flex items-center justify-center text-[#0a66c2]/85 hover:text-[#0a66c2] hover:bg-[#0a66c2]/10 transition-colors"
               aria-label="Open LinkedIn profile"
               title="Open LinkedIn profile"
             >
-              <LinkedInIcon className="h-3.5 w-3.5" />
+              <LinkedInIcon className="h-4 w-4" />
             </a>
           )}
           <DropdownMenu>
