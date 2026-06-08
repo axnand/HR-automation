@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { KanbanColumn } from "@/components/outreach/KanbanColumn";
+import { PipelineListView } from "@/components/jobs/PipelineListView";
 import { PipelineTask } from "@/components/outreach/CandidateKanbanCard";
 import {
   CandidateStage,
@@ -703,6 +704,7 @@ export function PipelineTab({ requisitionId }: Props) {
           <div className="flex items-center gap-3">
             <TabsList>
               <TabsTrigger value="board">Board</TabsTrigger>
+              <TabsTrigger value="list">List</TabsTrigger>
               <TabsTrigger value="archive" className="gap-1.5">
                 Archive
                 {archiveTotal > 0 && (
@@ -813,6 +815,19 @@ export function PipelineTab({ requisitionId }: Props) {
               />
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="list" className="flex-1 min-h-0 mt-0">
+          <PipelineListView
+            stages={stages}
+            scopeStages={ACTIVE_STAGES}
+            globalQuery={query}
+            onStageChange={handleStageChange}
+            selectedIds={selectedIds}
+            onSelect={handleSelect}
+            onSelectAll={handleColumnSelectAll}
+            onDeselectAll={handleColumnDeselectAll}
+          />
         </TabsContent>
 
         <TabsContent value="archive" className="flex-1 min-h-0 mt-0">
