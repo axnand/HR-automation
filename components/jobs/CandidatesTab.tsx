@@ -436,21 +436,21 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
       {/* Floating Export Bar */}
       {selectMode && (
         <div className="fixed bottom-0 left-56 right-0 z-40 flex justify-center pb-4 px-4 pointer-events-none">
-          <div className="pointer-events-auto w-full max-w-xl bg-card border border-border rounded-2xl shadow-2xl px-5 py-4 flex items-center gap-3">
+          <div className="pointer-events-auto w-auto max-w-[calc(100vw-2rem)] bg-card border border-border rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-2">
             <div className="shrink-0 flex items-center gap-2">
               <span className="inline-flex items-center justify-center h-7 px-2.5 rounded-full bg-primary text-primary-foreground text-xs font-bold min-w-[28px]">
                 {selectedIds.size}
               </span>
-              <span className="text-sm text-foreground">
+              <span className="text-sm text-foreground whitespace-nowrap">
                 {selectedIds.size === 0 ? "None selected" : `profile${selectedIds.size !== 1 ? "s" : ""} selected`}
               </span>
             </div>
-            <div className="flex-1" />
             {exportMsg && (
-              <span className={`text-xs px-2 py-1 rounded-lg ${exportMsg.type === "success" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>
+              <span className={`text-xs px-2 py-1 rounded-lg whitespace-nowrap ${exportMsg.type === "success" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>
                 {exportMsg.text}
               </span>
             )}
+            <div className="w-1" />
             <button
               onClick={handleBulkReevaluate}
               disabled={reevalLoading || exportLoading || selectedIds.size === 0}

@@ -146,33 +146,27 @@ async function commitSentMessage(
       }
       throw err;
     }
-    // P1 #24 / EC-9.7 — outreach path bumps Account.dailyCount so a single
-    // account shared across multiple channels can't exceed the provider's
-    // overall daily allotment. The scraping path already does this; the
-    // outreach path was previously invisible to the counter, leading to
-    // 429s when the channel cap was technically not yet reached.
+    // Outreach is throttled by budgets that are intentionally SEPARATE from the
+    // scraping/sourcing budget (Account.dailyCount):
+    //   1. the per-channel daily send cap (Channel.dailyCap), enforced via
+    //      isDailyCapReached() counting ThreadMessage rows for the channel; and
+    //   2. the per-account LinkedIn WEEKLY invite cap (Account.weeklyCount).
+    // We deliberately do NOT bump Account.dailyCount here. That counter is the
+    // scraping pipeline's budget; previously lumping outreach into it meant
+    // heavy sourcing on a shared account starved outreach (and vice-versa).
+    // Keeping the two budgets independent means neither cannibalizes the other.
     //
-    // We also (re-)set dailyResetAt to end-of-day so the reset cron knows
-    // when to roll the counter back to 0. The cron's WHERE clause requires
-    // dailyResetAt < now AND dailyCount > 0; without this set, the counter
-    // would grow indefinitely.
-    //
-    // P1 #27 — also bump weekly counter (only meaningful for LinkedIn, but
-    // we increment unconditionally since the weekly cap check itself only
-    // applies to LinkedIn channels — this keeps the helper signature
-    // simple). Set weeklyResetAt to 7 days from now if not already set.
+    // P1 #27 — still bump the weekly counter (the weekly cap check only applies
+    // to LinkedIn channels, but we increment unconditionally to keep this
+    // simple). Set weeklyResetAt to 7 days out if it's null or already expired.
     const now = new Date();
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
     const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     await tx.account.update({
       where: { id: accountId },
       data: {
-        dailyCount: { increment: 1 },
         weeklyCount: { increment: 1 },
         requestCount: { increment: 1 },
         lastUsedAt: now,
-        dailyResetAt: endOfDay,
         // Only push weeklyResetAt forward if it's null or in the past — once
         // set within an active 7-day window we leave it alone so the window
         // tracks the FIRST send in the current week, not the most recent.
@@ -292,22 +286,13 @@ export async function processThread(threadId: string): Promise<void> {
     return;
   }
 
-  // P1 #24 / EC-9.7 — account-wide daily cap enforcement. The channel-level
-  // dailyCap (enforced inside processLinkedIn/Email/WhatsApp) only counts
-  // ThreadMessage rows for that channel. When one account is shared across
-  // multiple channels, the channel checks all pass independently while the
-  // ACCOUNT-side allotment (Unipile rate-limit) gets blown through. Gate at
-  // the account level too — reschedule to next daily reset window.
-  //
-  // P1 #27 — also gate on warmup-adjusted daily cap. Fresh accounts ramp
-  // from CONFIG.WARMUP_DAILY_CAP up to CONFIG.DAILY_SAFE_LIMIT after the
-  // warmupUntil window expires.
-  const accountDailyCap = effectiveAccountDailyCap(account);
-  if (account.dailyCount >= accountDailyCap) {
-    await guardedThreadUpdate(thread.id, { nextActionAt: startOfNextDay() });
-    console.log(`[ThreadWorker] Thread ${threadId}: account "${account.name}" daily cap hit (${account.dailyCount}/${accountDailyCap}${account.warmupUntil && account.warmupUntil > new Date() ? ", warmup" : ""}) — rescheduled to next day`);
-    return;
-  }
+  // Outreach is NOT gated on the account-wide scraping budget (Account.dailyCount).
+  // That counter belongs to the sourcing pipeline; gating outreach on it let
+  // heavy scraping on a shared account starve outreach even when the channel's
+  // own send cap still had room. Outreach throttling lives in two places now:
+  //   • the per-channel daily send cap (Channel.dailyCap), enforced inside
+  //     processLinkedIn / processEmail / processWhatsApp via isDailyCapReached();
+  //   • the per-account weekly invite cap below (LinkedIn only).
 
   // P1 #27 / EC-13.6 — LinkedIn weekly invite cap. Only applies to LinkedIn
   // (other providers have no weekly notion). Reschedule to the weekly reset
@@ -385,16 +370,6 @@ export async function processThread(threadId: string): Promise<void> {
 // ~25 minutes of retry attempts (cron resets nextActionAt to now+5min on
 // each failure) before the thread is shut down.
 const MAX_CONSECUTIVE_FAILURES = 5;
-
-// P1 #27 — effective daily cap honoring warmup ramp. While warmup is active,
-// the account is constrained to CONFIG.WARMUP_DAILY_CAP regardless of how
-// large the configured channel cap is.
-function effectiveAccountDailyCap(account: AccountRow): number {
-  const inWarmup = account.warmupUntil && account.warmupUntil > new Date();
-  return inWarmup
-    ? Math.min(CONFIG.DAILY_SAFE_LIMIT, CONFIG.WARMUP_DAILY_CAP)
-    : CONFIG.DAILY_SAFE_LIMIT;
-}
 
 // ─── LinkedIn ─────────────────────────────────────────────────────────────────
 
