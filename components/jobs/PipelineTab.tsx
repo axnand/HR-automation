@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   RefreshCw, LayoutGrid, Search, X, ExternalLink,
-  ChevronDown, Zap, Trash2, Video,
+  ChevronDown, Zap, Trash2, Video, Send,
 } from "lucide-react";
 import { SendInterviewDialog } from "@/components/interview/SendInterviewDialog";
 import { BulkSendInterviewDialog } from "@/components/interview/BulkSendInterviewDialog";
@@ -163,6 +163,12 @@ export function PipelineTab({ requisitionId }: Props) {
   // Pending GDPR erase — set when recruiter clicks the Delete button.
   const [pendingErase, setPendingErase] = useState<{ taskIds: string[]; count: number } | null>(null);
   const [erasing, setErasing] = useState(false);
+
+  // Pending bulk LinkedIn invite — set when recruiter clicks "Send LinkedIn
+  // invite". Sends real connection requests immediately for the SHORTLISTED
+  // subset of the selection and creates a thread per candidate.
+  const [pendingSendInvite, setPendingSendInvite] = useState<{ taskIds: string[]; count: number } | null>(null);
+  const [sendingInvites, setSendingInvites] = useState(false);
 
   const fetchPipeline = useCallback(async () => {
     try {
@@ -587,6 +593,55 @@ export function PipelineTab({ requisitionId }: Props) {
     }
   }
 
+  // Send real LinkedIn invites for the SHORTLISTED candidates in the selection
+  // only — the endpoint also guards on stage, but we scope the UI so the dialog
+  // count and the action match what the recruiter sees.
+  function handleBulkSendInvite() {
+    const ids = selectedByStage["SHORTLISTED"] ?? [];
+    if (!ids.length) {
+      toast.message("No shortlisted candidates selected", {
+        description: "LinkedIn invites can only be sent to candidates in the Shortlisted stage.",
+      });
+      return;
+    }
+    setPendingSendInvite({ taskIds: ids, count: ids.length });
+  }
+
+  async function commitSendInvite(taskIds: string[]) {
+    setSendingInvites(true);
+    try {
+      const res = await fetch(`/api/requisitions/${requisitionId}/candidates/bulk-send-invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskIds }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        toast.error(d.error ?? "Failed to send invites");
+        return;
+      }
+      const sent = d.sent ?? 0;
+      const skipped = d.skipped ?? 0;
+      const failed = d.failed ?? 0;
+      if (sent === 0) {
+        toast.message("No invites sent", {
+          description: `${skipped} skipped, ${failed} failed.`,
+        });
+      } else {
+        const parts = [`Sent ${sent} invite${sent !== 1 ? "s" : ""}`];
+        if (skipped > 0) parts.push(`${skipped} skipped`);
+        if (failed > 0) parts.push(`${failed} failed`);
+        toast.success(parts.join(" · "));
+      }
+      clearSelection();
+      fetchPipeline();
+    } catch {
+      toast.error("Network error while sending invites");
+    } finally {
+      setSendingInvites(false);
+    }
+  }
+
   const filteredStages = useMemo<StageMap>(() => {
     if (!query) return stages;
     const out: StageMap = {};
@@ -841,6 +896,45 @@ export function PipelineTab({ requisitionId }: Props) {
         </DialogContent>
       </Dialog>
 
+      {/* Bulk send-invite confirmation dialog */}
+      <Dialog
+        open={!!pendingSendInvite}
+        onOpenChange={open => { if (!open) setPendingSendInvite(null); }}
+      >
+        <DialogContent className="max-w-sm">
+          {pendingSendInvite && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  Send LinkedIn invite to {pendingSendInvite.count} candidate{pendingSendInvite.count !== 1 ? "s" : ""}?
+                </DialogTitle>
+                <DialogDescription className="pt-1">
+                  This sends real LinkedIn connection requests <strong>immediately</strong> from your
+                  sending account and creates an outreach thread for each. Only Shortlisted
+                  candidates are included. Mind your daily LinkedIn limits.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" size="sm" onClick={() => setPendingSendInvite(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={sendingInvites}
+                  onClick={async () => {
+                    const ids = pendingSendInvite.taskIds;
+                    setPendingSendInvite(null);
+                    await commitSendInvite(ids);
+                  }}
+                >
+                  {sendingInvites ? "Sending…" : `Send ${pendingSendInvite.count} invite${pendingSendInvite.count !== 1 ? "s" : ""}`}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Floating bulk action bar */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-background border border-border rounded-2xl shadow-2xl px-4 py-2.5 animate-in slide-in-from-bottom-2 duration-150">
@@ -892,6 +986,24 @@ export function PipelineTab({ requisitionId }: Props) {
             <Video className="h-3 w-3" />
             Send interview link
           </Button>
+
+          {(() => {
+            const shortlistedCount = (selectedByStage["SHORTLISTED"] ?? []).length;
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={handleBulkSendInvite}
+                disabled={sendingInvites || shortlistedCount === 0}
+                title={shortlistedCount === 0 ? "Select Shortlisted candidates to send LinkedIn invites" : undefined}
+              >
+                {sendingInvites
+                  ? <><RefreshCw className="h-3 w-3 animate-spin" />Sending…</>
+                  : <><Send className="h-3 w-3" />Send LinkedIn invite{shortlistedCount > 0 ? ` (${shortlistedCount})` : ""}</>}
+              </Button>
+            );
+          })()}
 
           <div className="w-px h-5 bg-border mx-1" />
 
