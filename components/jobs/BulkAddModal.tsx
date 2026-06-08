@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,10 +15,34 @@ interface Props {
 }
 
 export function BulkAddModal({ open, onClose, requisitionId, onSuccess, onDuplicatesDetected }: Props) {
+  const storageKey = `bulkAddModal.urls.${requisitionId}`;
   const [urls, setUrls] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ totalTasks: number; invalidUrls?: string[]; duplicatesDetected?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Restore any draft the user left behind (e.g. closed the modal by clicking outside).
+  useEffect(() => {
+    if (!open) return;
+    try {
+      setUrls(localStorage.getItem(storageKey) ?? "");
+    } catch { /* ignore */ }
+  }, [open, storageKey]);
+
+  function updateUrls(value: string) {
+    setUrls(value);
+    try {
+      if (value) localStorage.setItem(storageKey, value);
+      else localStorage.removeItem(storageKey);
+    } catch { /* ignore */ }
+  }
+
+  function clearDraft() {
+    setUrls("");
+    try {
+      localStorage.removeItem(storageKey);
+    } catch { /* ignore */ }
+  }
 
   async function handleSubmit() {
     if (!urls.trim()) return;
@@ -36,7 +60,7 @@ export function BulkAddModal({ open, onClose, requisitionId, onSuccess, onDuplic
         setError(json.error || "Failed to start run");
       } else {
         setResult(json);
-        setUrls("");
+        clearDraft();
         onSuccess();
       }
 
@@ -70,11 +94,21 @@ export function BulkAddModal({ open, onClose, requisitionId, onSuccess, onDuplic
           </div>
 
           <div className="space-y-1.5">
-            <Label>LinkedIn URLs <span className="text-muted-foreground font-normal">(one per line)</span></Label>
+            <div className="flex items-center justify-between">
+              <Label>LinkedIn URLs <span className="text-muted-foreground font-normal">(one per line)</span></Label>
+              <button
+                type="button"
+                onClick={clearDraft}
+                disabled={loading || !urls}
+                className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
+              >
+                Clear
+              </button>
+            </div>
             <Textarea
               placeholder={"https://linkedin.com/in/username...\nhttps://linkedin.com/in/another..."}
               value={urls}
-              onChange={e => setUrls(e.target.value)}
+              onChange={e => updateUrls(e.target.value)}
               rows={8}
               className="font-mono text-xs resize-none"
             />
