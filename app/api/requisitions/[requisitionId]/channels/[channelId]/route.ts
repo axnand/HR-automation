@@ -54,7 +54,10 @@ export async function PATCH(
     // Look up the channel once if we'll need to validate config or sending account.
     const needExisting = body.config !== undefined || body.sendingAccountId !== undefined;
     const existing = needExisting
-      ? await prisma.channel.findUnique({ where: { id: channelId }, select: { type: true } })
+      ? await prisma.channel.findUnique({
+          where: { id: channelId },
+          select: { type: true, sendingAccountId: true },
+        })
       : null;
     if (needExisting && !existing) {
       return NextResponse.json({ error: "Channel not found" }, { status: 404 });
@@ -105,9 +108,17 @@ export async function PATCH(
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
+    // Only an ACTUAL change of sending account may reset live threads.
+    // This previously fired whenever the PATCH body merely *contained*
+    // sendingAccountId — but the edit form re-sends the whole form (incl. the
+    // unchanged account) on every save, so a no-op edit (e.g. tweaking a rule's
+    // minScore) archived the entire live pipeline as "account_changed". Compare
+    // the incoming value against the stored one and act only on a real diff.
+    const newSendingAccountId =
+      body.sendingAccountId !== undefined ? (body.sendingAccountId ?? null) : undefined;
     const accountChanging =
-      body.sendingAccountId !== undefined &&
-      existing?.type !== undefined;
+      newSendingAccountId !== undefined &&
+      newSendingAccountId !== (existing?.sendingAccountId ?? null);
 
     const channel = await prisma.channel.update({
       where: { id: channelId },
