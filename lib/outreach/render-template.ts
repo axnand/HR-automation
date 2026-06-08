@@ -47,8 +47,34 @@ export function buildVars(profile: any, analysis: any): TemplateVars {
   return { name: fullName, firstName, lastName, company, role, score, interviewLink: "" };
 }
 
+// Maps common spaced/alternate spellings to their canonical camelCase key.
+// Add new aliases here whenever a new variable is introduced in TemplateVars.
+const VAR_ALIASES: Record<string, keyof TemplateVars> = {
+  "first name": "firstName",
+  "last name": "lastName",
+  "full name": "name",
+  "interview link": "interviewLink",
+  "interviewlink": "interviewLink",
+};
+
+/**
+ * Normalises free-form variable tokens written by recruiters (e.g. "first name",
+ * "First Name") to the canonical camelCase key used internally, so a typo in
+ * spacing/casing never reaches a candidate unsubstituted.
+ */
+function normalizeTemplate(template: string): string {
+  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, raw: string) => {
+    const trimmed = raw.trim();
+    const alias = VAR_ALIASES[trimmed.toLowerCase()];
+    // Resolve alias OR at minimum strip surrounding whitespace so downstream
+    // regexes (which don't allow spaces) can still match canonical names.
+    return `{{${alias ?? trimmed}}}`;
+  });
+}
+
 export function renderTemplate(template: string, vars: TemplateVars): string {
-  return template
+  const normalized = normalizeTemplate(template);
+  const rendered = normalized
     .replace(/\{\{name\}\}/gi, vars.name)
     .replace(/\{\{firstName\}\}/gi, vars.firstName)
     .replace(/\{\{lastName\}\}/gi, vars.lastName)
@@ -56,4 +82,15 @@ export function renderTemplate(template: string, vars: TemplateVars): string {
     .replace(/\{\{role\}\}/gi, vars.role)
     .replace(/\{\{score\}\}/gi, vars.score)
     .replace(/\{\{\s*interviewLink\s*\}\}/gi, vars.interviewLink ?? "");
+
+  // Safety guard: any remaining {{...}} token is unknown — block the send
+  // rather than deliver a literal placeholder to the candidate.
+  const unreplaced = rendered.match(/\{\{[^}]+\}\}/g);
+  if (unreplaced) {
+    throw new Error(
+      `renderTemplate: unreplaced variable(s) ${unreplaced.join(", ")} — fix the template before sending`
+    );
+  }
+
+  return rendered;
 }
