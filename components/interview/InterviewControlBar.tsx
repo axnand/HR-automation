@@ -1,94 +1,173 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import type { ReactNode } from "react";
+import { AgentState, useLocalParticipant } from "@livekit/components-react";
+import { motion } from "framer-motion";
 import {
-  AgentState,
-  BarVisualizer,
-  VoiceAssistantControlBar,
-  useVoiceAssistant,
-} from "@livekit/components-react";
-import { Volume2, VolumeOff, PhoneOff } from "lucide-react";
+  Mic,
+  MicOff,
+  Captions,
+  CaptionsOff,
+  Video,
+  PhoneOff,
+} from "lucide-react";
 
 interface InterviewControlBarProps {
   handleBack: () => void;
   agentState: AgentState;
-  isSpeakerEnabled: boolean;
-  toggleSpeaker: () => void;
+  isSpeakerEnabled?: boolean;
+  toggleSpeaker?: () => void;
+  onToggleTranscript?: () => void;
+  showTranscript?: boolean;
   fullPage?: boolean;
 }
 
 export function InterviewControlBar({
   handleBack,
   agentState,
-  isSpeakerEnabled,
-  toggleSpeaker,
-  fullPage = true,
+  onToggleTranscript,
+  showTranscript = true,
 }: InterviewControlBarProps) {
-  const { audioTrack } = useVoiceAssistant();
+  const { isMicrophoneEnabled, localParticipant } = useLocalParticipant();
+  const micActive = !isMicrophoneEnabled;
+
+  const toggleMic = () => {
+    localParticipant?.setMicrophoneEnabled(!isMicrophoneEnabled);
+  };
 
   return (
-    <div className={`relative ${fullPage ? "h-15" : "h-14"} w-full`}>
-      <AnimatePresence>
-        <motion.div
-          initial={{ opacity: 1, top: 0 }}
-          animate={{ opacity: 1, top: 0 }}
-          exit={{ opacity: 0, top: "-10px" }}
-          transition={{ duration: 0.4, ease: [0.09, 1.04, 0.245, 1.055] }}
-          className="flex absolute w-full h-full items-center bg-card rounded-xl border border-border px-4 gap-3"
-        >
-          {/* Agent voice visualizer */}
-          <div className="flex-1 flex justify-start">
-            <BarVisualizer
-              state={agentState}
-              barCount={fullPage ? 5 : 4}
-              trackRef={audioTrack}
-              className={`gap-1 ${fullPage ? "h-8 w-20" : "h-6 w-14"}`}
-              options={{ minHeight: fullPage ? 10 : 8 }}
-            />
-          </div>
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
+      className="flex items-center gap-2 px-5 py-4 rounded-2xl w-full max-w-xl"
+      style={{
+        background: "rgba(6,18,28,0.88)",
+        border: "1px solid rgba(8,65,87,0.65)",
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+      }}
+    >
+      {/* Mute */}
+      <ControlBtn
+        icon={
+          micActive ? (
+            <MicOff className="w-5 h-5" />
+          ) : (
+            <Mic className="w-5 h-5" />
+          )
+        }
+        label="MUTE"
+        onClick={toggleMic}
+        active={micActive}
+        activeColor="red"
+      />
 
-          {/* Mic controls */}
-          <div className="flex justify-center">
-            {agentState !== "disconnected" && (
-              <VoiceAssistantControlBar
-                controls={{ leave: false }}
-                className={`[&_button]:flex [&_button]:items-center [&_button]:justify-center [&_button]:rounded-full [&_button]:bg-muted [&_button]:border [&_button]:border-border [&_button]:text-foreground [&_button:hover]:bg-muted/70 [&_button]:transition-all
-                  ${
-                    fullPage
-                      ? "[&_button]:h-10 [&_button]:w-10 [&_button]:p-2"
-                      : "[&_button]:h-8 [&_button]:w-8 [&_button]:p-1.5"
-                  }`}
-              />
-            )}
-          </div>
+      {/* Transcript */}
+      <ControlBtn
+        icon={
+          showTranscript ? (
+            <Captions className="w-5 h-5" />
+          ) : (
+            <CaptionsOff className="w-5 h-5" />
+          )
+        }
+        label="TRANSCRIPT"
+        onClick={onToggleTranscript ?? (() => {})}
+        active={showTranscript}
+        activeColor="cyan"
+      />
 
-          {/* Speaker toggle */}
-          <button
-            onClick={toggleSpeaker}
-            className={`${
-              fullPage ? "h-10 w-10" : "h-8 w-8"
-            } rounded-full bg-muted border border-border text-foreground hover:bg-muted/70 transition-colors flex items-center justify-center shrink-0`}
-            aria-label={isSpeakerEnabled ? "Mute speaker" : "Unmute speaker"}
-          >
-            {isSpeakerEnabled ? (
-              <Volume2 className={fullPage ? "h-4 w-4" : "h-3.5 w-3.5"} />
-            ) : (
-              <VolumeOff className={fullPage ? "h-4 w-4" : "h-3.5 w-3.5"} />
-            )}
-          </button>
+      {/* Camera (display only) */}
+      <ControlBtn
+        icon={<Video className="w-5 h-5" />}
+        label="CAMERA"
+        onClick={() => {}}
+        disabled
+      />
 
-          {/* End call */}
-          <button
-            className={`${
-              fullPage ? "h-10 px-4 text-sm" : "h-8 px-3 text-xs"
-            } rounded-full bg-destructive/10 border border-destructive/30 text-destructive hover:bg-destructive/20 transition-colors flex items-center justify-center gap-1.5 shrink-0 font-medium`}
-            onClick={handleBack}
-          >
-            <PhoneOff className={fullPage ? "h-4 w-4" : "h-3 w-3"} />
-            {agentState === "disconnected" ? "Leave" : "End"}
-          </button>
-        </motion.div>
-      </AnimatePresence>
-    </div>
+      <div className="flex-1" />
+
+      {/* End Interview */}
+      <motion.button
+        whileHover={{ scale: 1.04 }}
+        whileTap={{ scale: 0.96 }}
+        onClick={handleBack}
+        className="flex items-center gap-2.5 px-5 py-3 rounded-full text-white text-sm font-semibold transition-all shrink-0"
+        style={{
+          background: "linear-gradient(135deg, #f43f5e 0%, #dc2626 100%)",
+          boxShadow: "0 4px 18px rgba(244,63,94,0.35)",
+        }}
+      >
+        <PhoneOff className="w-4 h-4" />
+        {agentState === "disconnected" ? "Leave" : "End Interview"}
+      </motion.button>
+    </motion.div>
+  );
+}
+
+// ─── Single control button ────────────────────────────────────────────────────
+
+function ControlBtn({
+  icon,
+  label,
+  onClick,
+  active = false,
+  activeColor = "cyan",
+  disabled = false,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  activeColor?: "cyan" | "red";
+  disabled?: boolean;
+}) {
+  const isRed = activeColor === "red" && active;
+  const isCyan = activeColor === "cyan" && active;
+
+  const ringBg = isRed
+    ? "rgba(244,63,94,0.18)"
+    : isCyan
+    ? "rgba(1,183,172,0.14)"
+    : "rgba(8,40,58,0.65)";
+
+  const ringBorder = isRed
+    ? "rgba(244,63,94,0.45)"
+    : isCyan
+    ? "rgba(1,183,172,0.38)"
+    : "rgba(8,65,87,0.65)";
+
+  const iconColor = isRed ? "#f43f5e" : isCyan ? "#01B7AC" : "#64748b";
+  const labelColor = isRed ? "#f87171" : isCyan ? "#01B7AC" : "#475569";
+
+  return (
+    <motion.button
+      whileTap={disabled ? {} : { scale: 0.9 }}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      className={`flex flex-col items-center gap-1.5 px-3 py-2 rounded-xl transition-colors ${
+        disabled
+          ? "opacity-30 cursor-not-allowed"
+          : "hover:bg-white/5 cursor-pointer"
+      }`}
+    >
+      <div
+        className="w-11 h-11 rounded-full flex items-center justify-center transition-all"
+        style={{
+          background: ringBg,
+          border: `1px solid ${ringBorder}`,
+          color: iconColor,
+        }}
+      >
+        {icon}
+      </div>
+      <span
+        className="text-[9px] font-bold tracking-widest"
+        style={{ color: labelColor }}
+      >
+        {label}
+      </span>
+    </motion.button>
   );
 }

@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { sendInvitation, extractIdentifier } from "@/lib/services/unipile.service";
 import { buildVars, renderTemplate } from "@/lib/outreach/render-template";
 import { resolveRequisitionId } from "@/lib/resolve-requisition";
-import { stageEventExplicit } from "@/lib/channels/stage-event-context";
+import { markStageEventExplicit } from "@/lib/channels/stage-event-context";
+import { OutreachType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -86,14 +87,19 @@ export async function POST(
     });
 
     const now = new Date();
+    const cfg = channel.config as any;
+    const archiveDays: number = cfg?.archiveAfterInviteDays ?? 14;
+    const inviteTimeoutAt = new Date(now.getTime() + archiveDays * 24 * 60 * 60 * 1000);
+    const followupsTotal: number = Array.isArray(cfg?.followups) ? cfg.followups.length : 0;
+    const matchedRuleKey: string | null = cfg?.inviteRules?.[0]?.key ?? null;
 
-    await prisma.$transaction([
-      stageEventExplicit(),
-      prisma.task.update({
+    await prisma.$transaction(async (tx) => {
+      await markStageEventExplicit(tx);
+      await tx.task.update({
         where: { id: taskId },
         data: { stage: "CONTACT_REQUESTED", stageUpdatedAt: now },
-      }),
-      prisma.outreachMessage.create({
+      });
+      await tx.outreachMessage.create({
         data: {
           campaignId: channel.id,
           taskId,
@@ -104,8 +110,8 @@ export async function POST(
           sentAt: now,
           providerMessageId: invitationId || null,
         },
-      }),
-      prisma.stageEvent.create({
+      });
+      await tx.stageEvent.create({
         data: {
           taskId,
           fromStage: "SHORTLISTED",
@@ -113,8 +119,45 @@ export async function POST(
           actor: "USER",
           reason: "LinkedIn invitation sent",
         },
-      }),
-    ]);
+      });
+
+      // Create a ChannelThread so that the invite-accepted and message-received
+      // webhooks can match this conversation and auto-advance the stage.
+      // Without this, the task stays stuck at CONTACT_REQUESTED forever because
+      // the webhook handler only looks up threads by candidateProviderId or providerChatId.
+      const existingThread = await tx.channelThread.findFirst({
+        where: { taskId, channelId: channel.id },
+        select: { id: true },
+      });
+      if (!existingThread) {
+        const thread = await tx.channelThread.create({
+          data: {
+            taskId,
+            channelId: channel.id,
+            channelType: "LINKEDIN",
+            status: "ACTIVE",
+            providerState: { phase: "INVITE_PENDING" },
+            inviteSentAt: now,
+            nextActionAt: inviteTimeoutAt,
+            candidateProviderId: providerUserId,
+            accountId: account.id,
+            matchedRuleKey,
+            followupsSent: 0,
+            followupsTotal,
+          },
+        });
+        await tx.threadMessage.create({
+          data: {
+            threadId: thread.id,
+            accountId: account.id,
+            type: OutreachType.INVITE,
+            renderedBody: inviteNote ?? "",
+            sentAt: now,
+            providerMessageId: invitationId || null,
+          },
+        });
+      }
+    });
 
     return NextResponse.json({ ok: true, invitationId });
   } catch (error: any) {

@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     const agentName = interviewCfg?.defaultAgentName?.trim() || "HR-agent-practice";
 
     const body = {
-      pid: `mock_pid_${randomUUID()}`,
+      pid: `pid_${randomUUID()}`,
       name: agentName,
       room,
       agent_dispatch: true,
@@ -126,13 +126,17 @@ export async function POST(req: NextRequest) {
         ...(department && { department }),
         // Phase 2: inject the snapshotted question list so the SCAI agent knows
         // what to ask. The field name was decided 2026-06-02 (§8, §2 Phase 2).
+        // Sent as a single string prompt (numbered list) rather than an array —
+        // the SCAI agent consumes `questions` as a plain-text instruction.
         // Only included when there are questions to send.
         ...(Array.isArray(questionsSnapshot) && questionsSnapshot.length > 0 && {
-          questions: (questionsSnapshot as Array<Record<string, unknown>>).map((q) => ({
-            order: q.order,
-            text: q.text,
-            mustAsk: q.mustAsk ?? false,
-          })),
+          questions: (questionsSnapshot as Array<Record<string, unknown>>)
+            .map((q, i) => {
+              const order = typeof q.order === "number" ? q.order : i + 1;
+              const mustAsk = q.mustAsk ? " (must ask)" : "";
+              return `${order}. ${q.text}${mustAsk}`;
+            })
+            .join("\n"),
         }),
       },
       enable_recording: false,
