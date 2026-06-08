@@ -8,7 +8,7 @@ import {
   GraduationCap, FileText, Send, Loader2, MessageSquare,
   ArrowRightLeft, Calendar, TrendingUp, Award, AlertCircle, CheckCircle2,
   XCircle, ChevronLeft, StickyNote, Pencil, Paperclip, Trash2, MoreHorizontal,
-  Download,
+  Download, RotateCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -212,6 +212,9 @@ export default function CandidateDetailPage() {
   const [enrichingType, setEnrichingType] = useState<EnrichType | null>(null);
   const [enrichErrors, setEnrichErrors] = useState<Partial<Record<EnrichType, string>>>({});
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [reevaluating, setReevaluating] = useState(false);
+  const [reevalResult, setReevalResult] = useState<{ delta: number; from: number; to: number } | null>(null);
+  const [reevalError, setReevalError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/airscale/credits")
@@ -239,6 +242,28 @@ export default function CandidateDetailPage() {
       setEnrichErrors(prev => ({ ...prev, [type]: "Network error" }));
     } finally {
       setEnrichingType(null);
+    }
+  }
+
+  async function handleReevaluate() {
+    setReevaluating(true);
+    setReevalError(null);
+    setReevalResult(null);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/reevaluate`, { method: "POST" });
+      const d = await res.json();
+      if (!d.ok) {
+        setReevalError(d.error ?? "Re-evaluation failed");
+        return;
+      }
+      const from = d.before?.scorePercent ?? 0;
+      const to = d.after?.scorePercent ?? 0;
+      setReevalResult({ delta: Math.round((to - from) * 10) / 10, from, to });
+      refreshTask();
+    } catch {
+      setReevalError("Network error");
+    } finally {
+      setReevaluating(false);
     }
   }
 
@@ -465,12 +490,34 @@ export default function CandidateDetailPage() {
           {analysis && (
             <div className="shrink-0 flex items-center gap-4 pl-4 border-l border-border">
               <div className="text-right">
-                <p className={cn("text-4xl font-black tabular-nums leading-none", scoreColor)}>
-                  {scorePercent}%
-                </p>
+                <div className="flex items-center justify-end gap-1.5">
+                  <p className={cn("text-4xl font-black tabular-nums leading-none", scoreColor)}>
+                    {scorePercent}%
+                  </p>
+                  <button
+                    onClick={handleReevaluate}
+                    disabled={reevaluating}
+                    title="Re-evaluate against the current scoring rules (re-runs the AI on the saved profile — no LinkedIn re-scrape)"
+                    aria-label="Re-evaluate profile"
+                    className="h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RotateCw className={cn("h-3.5 w-3.5", reevaluating && "animate-spin")} />
+                  </button>
+                </div>
                 <p className="text-xs text-muted-foreground mt-1 font-medium">
                   {analysis.totalScore} / {analysis.maxScore} pts
                 </p>
+                {reevalResult && (
+                  <p className={cn(
+                    "text-[11px] font-semibold mt-0.5 tabular-nums",
+                    reevalResult.delta > 0 ? "text-emerald-500" : reevalResult.delta < 0 ? "text-rose-500" : "text-muted-foreground"
+                  )}>
+                    {reevalResult.delta > 0 ? "+" : ""}{reevalResult.delta}% vs last ({reevalResult.from}%→{reevalResult.to}%)
+                  </p>
+                )}
+                {reevalError && (
+                  <p className="text-[11px] font-medium mt-0.5 text-rose-500">{reevalError}</p>
+                )}
               </div>
               <div className="relative h-14 w-14">
                 <svg className="h-14 w-14 -rotate-90" viewBox="0 0 36 36">

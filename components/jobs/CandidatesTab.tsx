@@ -67,6 +67,7 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMsg, setExportMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
+  const [reevalLoading, setReevalLoading] = useState(false);
   const [showSheetModal, setShowSheetModal] = useState(false);
   const [sheetUrl, setSheetUrl] = useState(data.config?.sheetWebAppUrl || "");
   const [sheetIntegrations, setSheetIntegrations] = useState<SheetIntegrationType[]>([]);
@@ -154,6 +155,42 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
       setExportMsg({ type: "error", text: err.message });
     } finally {
       setEnrichLoading(false);
+    }
+  }
+
+  async function handleBulkReevaluate() {
+    // Re-evaluation re-runs the AI per profile, so require an explicit selection
+    // rather than silently re-scoring the whole (potentially large) list.
+    const taskIds = Array.from(selectedIds);
+    if (!taskIds.length) {
+      setExportMsg({ type: "error", text: "Select the profiles you want to re-evaluate first" });
+      return;
+    }
+    setReevalLoading(true);
+    setExportMsg(null);
+    try {
+      const res = await fetch(`/api/requisitions/${requisitionId}/candidates/bulk-reevaluate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskIds }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        setExportMsg({ type: "error", text: d.error ?? "Re-evaluation failed" });
+      } else {
+        const improved = (d.results ?? []).filter(
+          (r: any) => r.ok && r.before && r.after && r.after.scorePercent > r.before.scorePercent
+        ).length;
+        setExportMsg({
+          type: "success",
+          text: `Re-evaluated ${d.reevaluated}/${d.total}${improved ? ` · ${improved} improved` : ""}${d.failed ? ` · ${d.failed} failed` : ""}`,
+        });
+        onRefresh?.();
+      }
+    } catch (err: any) {
+      setExportMsg({ type: "error", text: err.message });
+    } finally {
+      setReevalLoading(false);
     }
   }
 
@@ -414,6 +451,14 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
                 {exportMsg.text}
               </span>
             )}
+            <button
+              onClick={handleBulkReevaluate}
+              disabled={reevalLoading || exportLoading || selectedIds.size === 0}
+              title="Re-run the AI scorer on the selected profiles using the current scoring rules (no LinkedIn re-scrape)"
+              className="px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors disabled:opacity-50 shrink-0"
+            >
+              {reevalLoading ? "Re-evaluating…" : "Re-evaluate"}
+            </button>
             <button
               onClick={handleBulkEnrich}
               disabled={enrichLoading || exportLoading}
