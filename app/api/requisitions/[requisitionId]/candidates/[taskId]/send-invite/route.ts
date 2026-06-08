@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendInvitation, extractIdentifier } from "@/lib/services/unipile.service";
+import { buildVars, renderTemplate } from "@/lib/outreach/render-template";
 import { resolveRequisitionId } from "@/lib/resolve-requisition";
 import { stageEventExplicit } from "@/lib/channels/stage-event-context";
 
@@ -16,7 +17,7 @@ export async function POST(
 
     const task = await prisma.task.findUnique({
       where: { id: taskId },
-      select: { id: true, url: true, stage: true, result: true },
+      select: { id: true, url: true, stage: true, result: true, analysisResult: true },
     });
 
     if (!task) {
@@ -31,6 +32,8 @@ export async function POST(
     }
 
     const profile = task.result ? JSON.parse(task.result) : null;
+    const analysis = task.analysisResult ? JSON.parse(task.analysisResult) : null;
+    const vars = buildVars(profile ?? {}, analysis ?? {});
     const providerUserId: string | null =
       profile?.provider_id ||
       profile?.public_identifier ||
@@ -70,7 +73,7 @@ export async function POST(
       const cfg = channel.config as any;
       const firstRule = cfg?.inviteRules?.[0];
       if (firstRule?.noteTemplate) {
-        inviteNote = firstRule.noteTemplate.slice(0, 300);
+        inviteNote = renderTemplate(firstRule.noteTemplate, vars).slice(0, 300);
       }
     } catch { /* skip */ }
 
