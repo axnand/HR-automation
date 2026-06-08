@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Briefcase, MapPin, MoreHorizontal, ExternalLink, X } from "lucide-react";
+import { Briefcase, MapPin, MoreHorizontal, ExternalLink, X, Filter, ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -179,28 +179,53 @@ export function PipelineListView({
   return (
     <div className="flex flex-col h-full gap-3">
       <FilterBar>
-        <div className="flex items-center gap-1 flex-wrap">
-          {scopeStages.map(stage => {
-            const active = stageFilter.has(stage);
-            const cfg = STAGE_CONFIG[stage];
-            return (
-              <button
-                key={stage}
-                onClick={() => toggleStage(stage)}
-                className={cn(
-                  "flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium transition-colors border",
-                  active
-                    ? "bg-foreground text-background border-foreground"
-                    : "bg-background text-muted-foreground border-border hover:text-foreground",
-                )}
-              >
-                <span className={cn("h-1.5 w-1.5 rounded-full", cfg.dot)} />
-                {cfg.label}
-              </button>
-            );
-          })}
-        </div>
-        <FilterDivider />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-1.5 bg-background border border-border rounded-lg pl-2 pr-2 py-1.5 text-xs text-foreground hover:border-primary focus:outline-none focus:border-primary transition-colors">
+              <Filter className="h-3 w-3 text-muted-foreground" />
+              {stageFilter.size === 0
+                ? "All stages"
+                : `${stageFilter.size} stage${stageFilter.size !== 1 ? "s" : ""}`}
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-44">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Filter by stage</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {scopeStages.map(stage => {
+              const active = stageFilter.has(stage);
+              const cfg = STAGE_CONFIG[stage];
+              return (
+                <DropdownMenuItem
+                  key={stage}
+                  onSelect={e => {
+                    e.preventDefault();
+                    toggleStage(stage);
+                  }}
+                  className="gap-2 text-xs cursor-pointer"
+                >
+                  <span className={cn("h-2 w-2 rounded-full shrink-0", cfg.dot)} />
+                  <span className="flex-1">{cfg.label}</span>
+                  {active && <Check className="h-3.5 w-3.5 text-primary" />}
+                </DropdownMenuItem>
+              );
+            })}
+            {stageFilter.size > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={e => {
+                    e.preventDefault();
+                    setStageFilter(new Set());
+                  }}
+                  className="text-xs cursor-pointer text-muted-foreground"
+                >
+                  Clear stages
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <FilterText
           value={filterLocation}
           onChange={setFilterLocation}
