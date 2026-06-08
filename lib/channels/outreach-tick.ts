@@ -151,12 +151,28 @@ export async function pollJobInviteAcceptances(requisitionId?: string): Promise<
   let accepted = 0;
 
   for (const { acc, threads } of byAccount.values()) {
-    const sentInvites = await listSentInvitations({
-      accountId: acc.accountId,
-      limit: 200,
-      accountDsn: acc.dsn ?? undefined,
-      accountApiKey: acc.apiKey ?? undefined,
-    });
+    let sentInvites: Awaited<ReturnType<typeof listSentInvitations>>;
+    try {
+      sentInvites = await listSentInvitations({
+        accountId: acc.accountId,
+        limit: 100,
+        accountDsn: acc.dsn ?? undefined,
+        accountApiKey: acc.apiKey ?? undefined,
+      });
+    } catch (err: any) {
+      console.warn(`[OutreachTick] pollInviteAcceptances: listSentInvitations failed for account ${acc.accountId} — skipping batch to avoid false positives: ${err.message}`);
+      continue;
+    }
+
+    // Guard: an empty list could mean API failure masquerading as "no pending invites".
+    // If we have INVITE_PENDING threads but zero sent invites came back, bail out — marking
+    // everything CONNECTED on a failed fetch would produce false positives (this was the
+    // original bug: limit=200 exceeded Unipile's max of 100, returned HTTP 400, listSentInvitations
+    // swallowed it as [], and every pending thread got wrongly marked CONNECTED).
+    if (sentInvites.length === 0 && threads.length > 0) {
+      console.warn(`[OutreachTick] pollInviteAcceptances: sent-invites list is empty but ${threads.length} INVITE_PENDING thread(s) exist for account ${acc.accountId} — skipping to avoid false positives`);
+      continue;
+    }
 
     const sentProviderIds = new Set(sentInvites.map(i => i.invitedUserId).filter(Boolean) as string[]);
     const sentPublicIds = new Set(sentInvites.map(i => i.invitedUserPublicId).filter(Boolean) as string[]);
