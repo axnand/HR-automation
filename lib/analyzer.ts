@@ -1042,7 +1042,13 @@ export async function analyzeProfile(
   let llmResult: any;
   try {
     const cleaned = content.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```$/i, "").trim();
-    llmResult = JSON.parse(cleaned);
+    try {
+      llmResult = JSON.parse(cleaned);
+    } catch {
+      const { jsonrepair } = await import("jsonrepair");
+      llmResult = JSON.parse(jsonrepair(cleaned));
+      console.warn("[Analyzer] JSON was malformed — repaired successfully.");
+    }
   } catch {
     console.error("[Analyzer] Failed to parse AI response:", content);
     throw new Error("AI returned invalid JSON. Please retry.");
