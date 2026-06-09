@@ -485,7 +485,7 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
                     <Label className="text-xs">InMail message <span className="text-destructive">*</span></Label>
                     <textarea
                       required value={rule.messageTemplate} rows={4}
-                      placeholder="Hi {{firstName}}, I'm reaching out about a {{role}} opportunity…"
+                      placeholder="Hi {{firstName}}, came across your background as {{role}} at {{company}} and wanted to reach out about an opportunity…"
                       onChange={e => updateRule(i, { messageTemplate: e.target.value })}
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     />
@@ -515,7 +515,7 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
         </p>
         <textarea
           value={connectedFirstMessage} rows={3}
-          placeholder="Hi {{firstName}}, reaching out about a {{role}} role at {{company}}…"
+          placeholder="Hi {{firstName}}, came across your profile at {{company}} and wanted to reach out about a role we're hiring for…"
           onChange={e => setConnectedFirstMessage(e.target.value)}
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
@@ -608,7 +608,7 @@ function EmailForm({ accounts, initial, onSubmit, submitLabel }: {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Subject line <span className="text-destructive">*</span></Label>
-                  <Input value={rule.subjectTemplate} onChange={e => updateRule(i, { subjectTemplate: e.target.value })} placeholder="Exciting opportunity at {{company}}" className="h-8 text-sm" />
+                  <Input value={rule.subjectTemplate} onChange={e => updateRule(i, { subjectTemplate: e.target.value })} placeholder="{{firstName}}, saw your work at {{company}}" className="h-8 text-sm" />
                   <VarChips onInsert={v => updateRule(i, { subjectTemplate: rule.subjectTemplate + v })} />
                 </div>
                 <div className="space-y-1.5">
