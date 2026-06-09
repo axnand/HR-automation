@@ -490,50 +490,79 @@ async function processLinkedIn(
 
   // ── Phase: ACTIVE + CONNECTED — send first DM ────────────────────────────
   if (providerState.phase === "CONNECTED" && !thread.lastMessageAt) {
-    console.log(`${tag} CONNECTED phase — no DM sent yet, preparing first DM`);
-    const firstDmTemplate = config.followups?.[0];
-    if (!firstDmTemplate) {
-      // Connect-only outreach: the pitch was delivered in the connection NOTE,
-      // so acceptance means the candidate has been CONTACTED — not a dead end to
-      // archive. Treat the note as the final message: mark the thread MESSAGED
-      // (rollup → MESSAGED, candidate shows as Contacted) and open the reply-wait
-      // window like any other final message.
-      //
-      // Reply detection still works without a chat: connect-only threads never
-      // get a providerChatId (we never startChat), so the message webhook's
-      // chat-id lookup can't match — but its sender-identity fallback matches on
-      // candidateProviderId (set at invite-send) and marks REPLIED. See
-      // handleNewMessage in app/api/webhooks/unipile/route.ts.
-      //
-      // Setting lastMessageAt (to the note's send time) both reports MESSAGED in
-      // the rollup and stops the CONNECTED first-DM branch from re-firing. If no
-      // reply lands before the window closes, the terminal branch archives. We
-      // never park on nextActionAt=null (the heal cron would treat that as a
-      // crashed-mid-claim thread).
-      console.log(`${tag} No DM configured — connection note was the message; marking MESSAGED + reply-wait`);
-      await guardedThreadUpdate(thread.id, {
-        providerState: { phase: "MESSAGED" },
-        lastMessageAt: thread.inviteSentAt ?? new Date(),
-        nextActionAt: scheduleAfterSend(config, undefined),
-      });
-      return;
+    // Already-connected candidates: we skipped the invite (inviteSentAt is null),
+    // so the connection NOTE — our actual first reach-out — never reached them.
+    // Send an "opener" first: the dedicated connectedFirstMessage if set, else the
+    // connection note's content. The opener is an EXTRA message that does NOT
+    // consume a follow-up slot (followupsSent stays 0), so followups[0..] still
+    // send afterwards — mirroring a freshly-connected candidate who got the note
+    // (via invite) and then followups[0..]. Freshly-connected candidates
+    // (inviteSentAt set) skip the opener and start directly at followups[0].
+    const isAlreadyConnected = !thread.inviteSentAt;
+    const matchedRule = config.inviteRules?.find(r => r.key === thread.matchedRuleKey);
+    const opener = isAlreadyConnected
+      ? (config.connectedFirstMessage?.trim() || matchedRule?.noteTemplate?.trim() || "")
+      : "";
+
+    // Choose the first message + how it advances the follow-up counter:
+    //   opener       → extra reach-out; followups[0] still pending (sent stays 0)
+    //   followups[0] → the normal first DM; consumes slot 0       (sent → 1)
+    let text: string;
+    let newFollowupsSent: number;
+    let nextFollowupIdx: number;
+    if (opener) {
+      text = renderTemplate(opener, vars);
+      newFollowupsSent = 0;
+      nextFollowupIdx = 0;
+      console.log(`${tag} CONNECTED (already-connected, no invite sent) — sending ${config.connectedFirstMessage?.trim() ? "dedicated opener" : "connection-note opener"} before follow-ups`);
+    } else {
+      const firstDmTemplate = config.followups?.[0];
+      if (!firstDmTemplate) {
+        // Connect-only outreach: the pitch was delivered in the connection NOTE,
+        // so acceptance means the candidate has been CONTACTED — not a dead end to
+        // archive. Treat the note as the final message: mark the thread MESSAGED
+        // (rollup → MESSAGED, candidate shows as Contacted) and open the reply-wait
+        // window like any other final message.
+        //
+        // Reply detection still works without a chat: connect-only threads never
+        // get a providerChatId (we never startChat), so the message webhook's
+        // chat-id lookup can't match — but its sender-identity fallback matches on
+        // candidateProviderId (set at invite-send) and marks REPLIED. See
+        // handleNewMessage in app/api/webhooks/unipile/route.ts.
+        //
+        // Setting lastMessageAt (to the note's send time) both reports MESSAGED in
+        // the rollup and stops the CONNECTED first-DM branch from re-firing. If no
+        // reply lands before the window closes, the terminal branch archives. We
+        // never park on nextActionAt=null (the heal cron would treat that as a
+        // crashed-mid-claim thread).
+        console.log(`${tag} No DM configured — connection note was the message; marking MESSAGED + reply-wait`);
+        await guardedThreadUpdate(thread.id, {
+          providerState: { phase: "MESSAGED" },
+          lastMessageAt: thread.inviteSentAt ?? new Date(),
+          nextActionAt: scheduleAfterSend(config, undefined),
+        });
+        return;
+      }
+      text = renderTemplate(firstDmTemplate.template, vars);
+      newFollowupsSent = 1;
+      nextFollowupIdx = 1;
+      console.log(`${tag} CONNECTED phase — sending first DM (followups[0])`);
     }
 
     // Pre-API race check: re-read status + manualStage immediately before the
     // (slow) Unipile call. If a webhook or recruiter flipped the thread, skip.
     const sendable = await verifyThreadStillSendable(thread.id);
     if (!sendable.ok) {
-      console.log(`${tag} Skipping first DM: ${sendable.reason}`);
+      console.log(`${tag} Skipping first message: ${sendable.reason}`);
       return;
     }
     const pendingKey = await markPendingSend(thread.id);
     if (!pendingKey) {
-      console.log(`${tag} Status flipped between verify and pending-mark — skipping first DM`);
+      console.log(`${tag} Status flipped between verify and pending-mark — skipping first message`);
       return;
     }
 
-    const text = renderTemplate(firstDmTemplate.template, vars);
-    console.log(`${tag} Sending first DM via "${account.name}" (${text.length} chars)`);
+    console.log(`${tag} Sending first message via "${account.name}" (${text.length} chars)`);
     let chatId: string;
     let messageId: string;
     try {
@@ -559,8 +588,7 @@ async function processLinkedIn(
       throw err;
     }
 
-    const nextFollowup = config.followups?.[1];
-    const nextAt = scheduleAfterSend(config, nextFollowup);
+    const nextAt = scheduleAfterSend(config, config.followups?.[nextFollowupIdx]);
 
     const ok = await commitSentMessage(
       thread.id, account.id,
@@ -568,7 +596,7 @@ async function processLinkedIn(
         providerState: { phase: "MESSAGED" }, // moves task rollup off of CONNECTED
         providerChatId: chatId,
         lastMessageAt: new Date(),
-        followupsSent: 1,
+        followupsSent: newFollowupsSent,
         nextActionAt: nextAt,
       },
       {
@@ -581,7 +609,7 @@ async function processLinkedIn(
       },
       tag,
     );
-    if (ok) console.log(`${tag} First DM sent — chatId=${chatId}`);
+    if (ok) console.log(`${tag} First message sent — chatId=${chatId}`);
     return;
   }
 

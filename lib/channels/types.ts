@@ -29,6 +29,11 @@ export interface LinkedInConfig {
   archiveAfterInviteDays: number; // archive if invite not accepted within N days
   followups: FollowupRule[];      // [0] = first DM after connect (or first followup for InMail)
   replyWaitDays?: number;         // after the LAST follow-up, wait N days for a reply before archiving
+  // First message for candidates we are ALREADY connected to (1st-degree), who
+  // never receive the connection note because no invite is sent. Delivered as a
+  // DM before the followups[] sequence. If unset, the connection note's content
+  // is used as the opener instead.
+  connectedFirstMessage?: string;
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
@@ -160,6 +165,9 @@ export function validateLinkedInConfig(c: unknown): ValidationResult {
   }
   const replyWait = validateReplyWaitDays(config);
   if (!replyWait.ok) return replyWait;
+  if (config.connectedFirstMessage !== undefined && typeof config.connectedFirstMessage !== "string") {
+    return { ok: false, error: "connectedFirstMessage must be a string" };
+  }
   return { ok: true };
 }
 

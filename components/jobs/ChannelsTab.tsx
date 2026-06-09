@@ -88,6 +88,7 @@ function channelToFormValues(channel: Channel): ChannelFormValues {
       archiveAfterInviteDays: (cfg.archiveAfterInviteDays as number) ?? 14,
       followups: (cfg.followups as LinkedInFormValues["followups"]) ?? [],
       replyWaitDays: (cfg.replyWaitDays as number) ?? 5,
+      connectedFirstMessage: (cfg.connectedFirstMessage as string) ?? "",
     } satisfies LinkedInFormValues;
   }
 
@@ -133,6 +134,7 @@ function formValuesToApiBody(values: ChannelFormValues, type: ChannelType) {
       archiveAfterInviteDays: rest.archiveAfterInviteDays,
       followups: rest.followups,
       replyWaitDays: rest.replyWaitDays,
+      connectedFirstMessage: rest.connectedFirstMessage,
     };
   } else if (type === "EMAIL") {
     body.config = {
@@ -259,6 +261,7 @@ export function ChannelsTab({ requisitionId }: Props) {
         archiveAfterInviteDays: rest.archiveAfterInviteDays,
         followups: rest.followups,
         replyWaitDays: rest.replyWaitDays,
+        connectedFirstMessage: rest.connectedFirstMessage,
       };
     } else if (ui.channel.type === "EMAIL") {
       body.config = {

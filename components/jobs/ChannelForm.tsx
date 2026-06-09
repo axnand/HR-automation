@@ -27,6 +27,7 @@ export interface LinkedInFormValues {
   name: string; sendingAccountId: string; dailyCap: number; dailyInMailCap: number;
   inviteRules: InviteRule[]; archiveAfterInviteDays: number; followups: Followup[];
   replyWaitDays: number;
+  connectedFirstMessage: string;
 }
 
 // Email
@@ -338,6 +339,7 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
   const [dailyInMailCap, setDailyInMailCap] = useState(initial?.dailyInMailCap ?? 5);
   const [archiveAfterInviteDays, setArchiveAfterInviteDays] = useState(initial?.archiveAfterInviteDays ?? 14);
   const [replyWaitDays, setReplyWaitDays] = useState(initial?.replyWaitDays ?? 5);
+  const [connectedFirstMessage, setConnectedFirstMessage] = useState(initial?.connectedFirstMessage ?? "");
   const [inviteRules, setInviteRules] = useState<InviteRule[]>(initial?.inviteRules ?? [defaultLinkedInRule()]);
   const [followups, setFollowups] = useState<Followup[]>(initial?.followups ?? []);
   const [saving, setSaving] = useState(false);
@@ -368,6 +370,7 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
       await onSubmit({
         name: name.trim(), sendingAccountId: sendingAccountId === "_none" ? "" : sendingAccountId,
         dailyCap, dailyInMailCap, archiveAfterInviteDays, inviteRules, followups, replyWaitDays,
+        connectedFirstMessage: connectedFirstMessage.trim(),
       });
     } catch (err: any) {
       setError(err.message || "Failed to save");
@@ -504,6 +507,20 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
       </div>
 
       <FollowupList followups={followups} onChange={setFollowups} />
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">First message if already connected <span className="text-muted-foreground">(optional)</span></Label>
+        <p className="text-[10px] text-muted-foreground">
+          For candidates you're already connected to (1st-degree). No invite/note is sent to them, so this is delivered as their first DM, before the follow-ups. Leave blank to reuse the connection note above.
+        </p>
+        <textarea
+          value={connectedFirstMessage} rows={3}
+          placeholder="Hi {{firstName}}, reaching out about a {{role}} role at {{company}}…"
+          onChange={e => setConnectedFirstMessage(e.target.value)}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <VarChips onInsert={v => setConnectedFirstMessage(connectedFirstMessage + v)} />
+      </div>
 
       <ReplyWaitField value={replyWaitDays} onChange={setReplyWaitDays} />
 
