@@ -38,7 +38,7 @@ const TENURE_SUMMARY_RE = /^\d+\s+years?\s*(?:\d+\s+months?)?$|^\d+\s+months?$/i
 const NON_FULL_TIME_POSITION_RE =
   /\b(intern|internship|trainee|apprentice|volunteer|freelance|freelancer|contractor|part[-\s]?time|summer\s+associate|intern\.)\b/i;
 
-function isFullTimeRole(position: string): boolean {
+export function isFullTimeRole(position: string): boolean {
   if (!position) return false;
   return !NON_FULL_TIME_POSITION_RE.test(position);
 }

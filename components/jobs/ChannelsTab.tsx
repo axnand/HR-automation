@@ -87,6 +87,7 @@ function channelToFormValues(channel: Channel): ChannelFormValues {
       inviteRules:  (cfg.inviteRules as LinkedInFormValues["inviteRules"]) ?? [],
       archiveAfterInviteDays: (cfg.archiveAfterInviteDays as number) ?? 14,
       followups: (cfg.followups as LinkedInFormValues["followups"]) ?? [],
+      replyWaitDays: (cfg.replyWaitDays as number) ?? 5,
     } satisfies LinkedInFormValues;
   }
 
@@ -97,6 +98,7 @@ function channelToFormValues(channel: Channel): ChannelFormValues {
       followups:  (cfg.followups  as EmailFormValues["followups"])  ?? [],
       contactRetryMinutes: (cfg.contactRetryMinutes as number) ?? 60,
       contactRetryMaxDays: (cfg.contactRetryMaxDays as number) ?? 7,
+      replyWaitDays: (cfg.replyWaitDays as number) ?? 5,
     } satisfies EmailFormValues;
   }
 
@@ -109,6 +111,7 @@ function channelToFormValues(channel: Channel): ChannelFormValues {
     quietHours: (cfg.quietHours as WAFormValues["quietHours"]) ?? { startHour: 21, endHour: 8, tz: "Asia/Kolkata" },
     contactRetryMinutes: (cfg.contactRetryMinutes as number) ?? 60,
     contactRetryMaxDays: (cfg.contactRetryMaxDays as number) ?? 7,
+    replyWaitDays: (cfg.replyWaitDays as number) ?? 5,
   } satisfies WAFormValues;
 }
 
@@ -129,6 +132,7 @@ function formValuesToApiBody(values: ChannelFormValues, type: ChannelType) {
       inviteRules: rest.inviteRules,
       archiveAfterInviteDays: rest.archiveAfterInviteDays,
       followups: rest.followups,
+      replyWaitDays: rest.replyWaitDays,
     };
   } else if (type === "EMAIL") {
     body.config = {
@@ -136,6 +140,7 @@ function formValuesToApiBody(values: ChannelFormValues, type: ChannelType) {
       followups: rest.followups,
       contactRetryMinutes: rest.contactRetryMinutes,
       contactRetryMaxDays: rest.contactRetryMaxDays,
+      replyWaitDays: rest.replyWaitDays,
     };
   } else {
     body.config = {
@@ -145,6 +150,7 @@ function formValuesToApiBody(values: ChannelFormValues, type: ChannelType) {
       quietHours: rest.quietHours,
       contactRetryMinutes: rest.contactRetryMinutes,
       contactRetryMaxDays: rest.contactRetryMaxDays,
+      replyWaitDays: rest.replyWaitDays,
     };
   }
 
@@ -252,6 +258,7 @@ export function ChannelsTab({ requisitionId }: Props) {
         inviteRules: rest.inviteRules,
         archiveAfterInviteDays: rest.archiveAfterInviteDays,
         followups: rest.followups,
+        replyWaitDays: rest.replyWaitDays,
       };
     } else if (ui.channel.type === "EMAIL") {
       body.config = {
@@ -259,6 +266,7 @@ export function ChannelsTab({ requisitionId }: Props) {
         followups: rest.followups,
         contactRetryMinutes: rest.contactRetryMinutes,
         contactRetryMaxDays: rest.contactRetryMaxDays,
+        replyWaitDays: rest.replyWaitDays,
       };
     } else {
       body.config = {
@@ -268,6 +276,7 @@ export function ChannelsTab({ requisitionId }: Props) {
         quietHours: rest.quietHours,
         contactRetryMinutes: rest.contactRetryMinutes,
         contactRetryMaxDays: rest.contactRetryMaxDays,
+        replyWaitDays: rest.replyWaitDays,
       };
     }
 

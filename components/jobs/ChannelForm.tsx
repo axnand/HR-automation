@@ -26,6 +26,7 @@ interface InviteRule {
 export interface LinkedInFormValues {
   name: string; sendingAccountId: string; dailyCap: number; dailyInMailCap: number;
   inviteRules: InviteRule[]; archiveAfterInviteDays: number; followups: Followup[];
+  replyWaitDays: number;
 }
 
 // Email
@@ -37,6 +38,7 @@ export interface EmailFormValues {
   name: string; sendingAccountId: string; dailyCap: number;
   emailRules: EmailRule[]; followups: Followup[];
   contactRetryMinutes: number; contactRetryMaxDays: number;
+  replyWaitDays: number;
 }
 
 // WhatsApp
@@ -50,6 +52,7 @@ export interface WAFormValues {
   waRules: WARule[]; followups: Followup[];
   quietHoursEnabled: boolean; quietHours: QuietHours;
   contactRetryMinutes: number; contactRetryMaxDays: number;
+  replyWaitDays: number;
 }
 
 export type ChannelFormValues = LinkedInFormValues | EmailFormValues | WAFormValues;
@@ -224,6 +227,35 @@ function FollowupList({
   );
 }
 
+// ─── Reply-wait field (shared across all channel types) ──────────────────────
+//
+// After the LAST message is sent, the candidate gets this many days to reply
+// before the thread is auto-archived. Prevents archiving someone the instant
+// the final follow-up goes out (they'd have zero chance to respond).
+
+function ReplyWaitField({
+  value, onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Wait for reply (days)</Label>
+      <div className="flex items-center gap-3">
+        <Input
+          type="number" min={1} max={90} value={value}
+          onChange={e => onChange(Number(e.target.value))}
+          className="h-8 text-sm w-24"
+        />
+        <span className="text-xs text-muted-foreground">
+          After the final message, wait this long for a reply before archiving.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Contact retry fields (Email + WhatsApp) ──────────────────────────────────
 
 function ContactRetryFields({
@@ -305,6 +337,7 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
   const [dailyCap, setDailyCap] = useState(initial?.dailyCap ?? 20);
   const [dailyInMailCap, setDailyInMailCap] = useState(initial?.dailyInMailCap ?? 5);
   const [archiveAfterInviteDays, setArchiveAfterInviteDays] = useState(initial?.archiveAfterInviteDays ?? 14);
+  const [replyWaitDays, setReplyWaitDays] = useState(initial?.replyWaitDays ?? 5);
   const [inviteRules, setInviteRules] = useState<InviteRule[]>(initial?.inviteRules ?? [defaultLinkedInRule()]);
   const [followups, setFollowups] = useState<Followup[]>(initial?.followups ?? []);
   const [saving, setSaving] = useState(false);
@@ -334,7 +367,7 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
     try {
       await onSubmit({
         name: name.trim(), sendingAccountId: sendingAccountId === "_none" ? "" : sendingAccountId,
-        dailyCap, dailyInMailCap, archiveAfterInviteDays, inviteRules, followups,
+        dailyCap, dailyInMailCap, archiveAfterInviteDays, inviteRules, followups, replyWaitDays,
       });
     } catch (err: any) {
       setError(err.message || "Failed to save");
@@ -472,6 +505,8 @@ function LinkedInForm({ accounts, initial, onSubmit, submitLabel }: {
 
       <FollowupList followups={followups} onChange={setFollowups} />
 
+      <ReplyWaitField value={replyWaitDays} onChange={setReplyWaitDays} />
+
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       <div className="flex justify-end">
@@ -501,6 +536,7 @@ function EmailForm({ accounts, initial, onSubmit, submitLabel }: {
   const [followups, setFollowups] = useState<Followup[]>(initial?.followups ?? []);
   const [contactRetryMinutes, setContactRetryMinutes] = useState(initial?.contactRetryMinutes ?? 60);
   const [contactRetryMaxDays, setContactRetryMaxDays] = useState(initial?.contactRetryMaxDays ?? 7);
+  const [replyWaitDays, setReplyWaitDays] = useState(initial?.replyWaitDays ?? 5);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [expandedRule, setExpandedRule] = useState(0);
@@ -520,7 +556,7 @@ function EmailForm({ accounts, initial, onSubmit, submitLabel }: {
     }
     setSaving(true);
     try {
-      await onSubmit({ name: name.trim(), sendingAccountId: sendingAccountId === "_none" ? "" : sendingAccountId, dailyCap, emailRules, followups, contactRetryMinutes, contactRetryMaxDays });
+      await onSubmit({ name: name.trim(), sendingAccountId: sendingAccountId === "_none" ? "" : sendingAccountId, dailyCap, emailRules, followups, contactRetryMinutes, contactRetryMaxDays, replyWaitDays });
     } catch (err: any) { setError(err.message || "Failed to save"); } finally { setSaving(false); }
   }
 
@@ -572,6 +608,8 @@ function EmailForm({ accounts, initial, onSubmit, submitLabel }: {
       <Separator />
       <FollowupList followups={followups} onChange={setFollowups} showSubject />
 
+      <ReplyWaitField value={replyWaitDays} onChange={setReplyWaitDays} />
+
       <Separator />
       <ContactRetryFields
         retryMinutes={contactRetryMinutes} setRetryMinutes={setContactRetryMinutes}
@@ -608,6 +646,7 @@ function WAForm({ accounts, initial, onSubmit, submitLabel }: {
   const [quietHours, setQuietHours] = useState<QuietHours>(initial?.quietHours ?? { startHour: 21, endHour: 8, tz: "Asia/Kolkata" });
   const [contactRetryMinutes, setContactRetryMinutes] = useState(initial?.contactRetryMinutes ?? 60);
   const [contactRetryMaxDays, setContactRetryMaxDays] = useState(initial?.contactRetryMaxDays ?? 7);
+  const [replyWaitDays, setReplyWaitDays] = useState(initial?.replyWaitDays ?? 5);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [expandedRule, setExpandedRule] = useState(0);
@@ -630,7 +669,7 @@ function WAForm({ accounts, initial, onSubmit, submitLabel }: {
         name: name.trim(), sendingAccountId: sendingAccountId === "_none" ? "" : sendingAccountId,
         dailyCap, waRules, followups, quietHoursEnabled,
         quietHours: quietHoursEnabled ? quietHours : { startHour: 21, endHour: 8, tz: "UTC" },
-        contactRetryMinutes, contactRetryMaxDays,
+        contactRetryMinutes, contactRetryMaxDays, replyWaitDays,
       });
     } catch (err: any) { setError(err.message || "Failed to save"); } finally { setSaving(false); }
   }
@@ -676,6 +715,8 @@ function WAForm({ accounts, initial, onSubmit, submitLabel }: {
 
       <Separator />
       <FollowupList followups={followups} onChange={setFollowups} />
+
+      <ReplyWaitField value={replyWaitDays} onChange={setReplyWaitDays} />
 
       <Separator />
       <ContactRetryFields

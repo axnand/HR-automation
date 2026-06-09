@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
                 select: {
                   tasks: {
                     where: {
+                      deletedAt: null,
                       OR: [{ result: { not: null } }, { analysisResult: { not: null } }],
                     },
                   },

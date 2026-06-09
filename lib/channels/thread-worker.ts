@@ -35,6 +35,7 @@ import {
   type WAConfig,
   type LinkedInInviteRule,
   type QuietHours,
+  type FollowupRule,
 } from "./types";
 
 // ─── Race protection ──────────────────────────────────────────────────────────
@@ -492,9 +493,29 @@ async function processLinkedIn(
     console.log(`${tag} CONNECTED phase — no DM sent yet, preparing first DM`);
     const firstDmTemplate = config.followups?.[0];
     if (!firstDmTemplate) {
-      // No DM configured — thread is done (connected but no messages to send)
-      console.log(`${tag} No followup templates configured — thread complete (connected, no DM)`);
-      await guardedThreadUpdate(thread.id, { nextActionAt: null });
+      // Connect-only outreach: the pitch was delivered in the connection NOTE,
+      // so acceptance means the candidate has been CONTACTED — not a dead end to
+      // archive. Treat the note as the final message: mark the thread MESSAGED
+      // (rollup → MESSAGED, candidate shows as Contacted) and open the reply-wait
+      // window like any other final message.
+      //
+      // Reply detection still works without a chat: connect-only threads never
+      // get a providerChatId (we never startChat), so the message webhook's
+      // chat-id lookup can't match — but its sender-identity fallback matches on
+      // candidateProviderId (set at invite-send) and marks REPLIED. See
+      // handleNewMessage in app/api/webhooks/unipile/route.ts.
+      //
+      // Setting lastMessageAt (to the note's send time) both reports MESSAGED in
+      // the rollup and stops the CONNECTED first-DM branch from re-firing. If no
+      // reply lands before the window closes, the terminal branch archives. We
+      // never park on nextActionAt=null (the heal cron would treat that as a
+      // crashed-mid-claim thread).
+      console.log(`${tag} No DM configured — connection note was the message; marking MESSAGED + reply-wait`);
+      await guardedThreadUpdate(thread.id, {
+        providerState: { phase: "MESSAGED" },
+        lastMessageAt: thread.inviteSentAt ?? new Date(),
+        nextActionAt: scheduleAfterSend(config, undefined),
+      });
       return;
     }
 
@@ -539,7 +560,7 @@ async function processLinkedIn(
     }
 
     const nextFollowup = config.followups?.[1];
-    const nextAt = nextFollowup ? daysFromNow(nextFollowup.afterDays) : null;
+    const nextAt = scheduleAfterSend(config, nextFollowup);
 
     const ok = await commitSentMessage(
       thread.id, account.id,
@@ -595,7 +616,7 @@ async function processLinkedIn(
     });
 
     const nextFollowup = config.followups?.[thread.followupsSent + 1];
-    const nextAt = nextFollowup ? daysFromNow(nextFollowup.afterDays) : null;
+    const nextAt = scheduleAfterSend(config, nextFollowup);
     const newSent = thread.followupsSent + 1;
 
     const ok = await commitSentMessage(
@@ -615,19 +636,17 @@ async function processLinkedIn(
       },
       tag,
     );
-    if (ok) {
-      console.log(`${tag} Follow-up ${newSent}/${thread.followupsTotal} sent`);
-      if (!nextAt) {
-        await archiveThread(thread.id, "All follow-ups exhausted — no reply received");
-      }
-    }
+    if (ok) console.log(`${tag} Follow-up ${newSent}/${thread.followupsTotal} sent`);
     return;
   }
 
-  // All followups sent — archive
+  // Final follow-up already sent; reply-wait deadline has now elapsed with the
+  // thread still un-replied (a reply would have flipped it to REPLIED/PAUSED and
+  // we'd never reach here). Archive. The reply window itself was granted by
+  // scheduleAfterSend when the last message went out — we are NOT cutting it short.
   if (thread.followupsSent >= thread.followupsTotal) {
-    console.log(`${tag} All follow-ups exhausted (${thread.followupsSent}/${thread.followupsTotal}) — archiving`);
-    await archiveThread(thread.id, "All follow-ups exhausted — no reply received");
+    console.log(`${tag} Reply-wait elapsed (${thread.followupsSent}/${thread.followupsTotal} sent, no reply) — archiving`);
+    await archiveThread(thread.id, "No reply within the reply-wait window after the final message");
   }
 }
 
@@ -775,7 +794,7 @@ async function sendLinkedInInMail(
   });
 
   const nextFollowup = config.followups?.[0];
-  const nextAt = nextFollowup ? daysFromNow(nextFollowup.afterDays) : null;
+  const nextAt = scheduleAfterSend(config, nextFollowup);
 
   const ok = await commitSentMessage(
       thread.id, account.id,
@@ -889,7 +908,7 @@ async function processEmail(
     }
 
     const nextFollowup = config.followups?.[0];
-    const nextAt = nextFollowup ? daysFromNow(nextFollowup.afterDays) : null;
+    const nextAt = scheduleAfterSend(config, nextFollowup);
 
     const ok = await commitSentMessage(
       thread.id, account.id,
@@ -952,7 +971,7 @@ async function processEmail(
     }
 
     const nextFollowup = config.followups?.[thread.followupsSent + 1];
-    const nextAt = nextFollowup ? daysFromNow(nextFollowup.afterDays) : null;
+    const nextAt = scheduleAfterSend(config, nextFollowup);
     const newSent = thread.followupsSent + 1;
 
     const ok = await commitSentMessage(
@@ -968,12 +987,15 @@ async function processEmail(
       },
       tag,
     );
-    if (ok) {
-      console.log(`${tag} Email follow-up ${newSent}/${thread.followupsTotal} sent`);
-      if (!nextAt) {
-        await archiveThread(thread.id, "All email follow-ups exhausted");
-      }
-    }
+    if (ok) console.log(`${tag} Email follow-up ${newSent}/${thread.followupsTotal} sent`);
+    return;
+  }
+
+  // Reply-wait deadline elapsed after the final email with no reply — archive.
+  // (scheduleAfterSend granted the window; reaching here means it expired.)
+  if (thread.status === "ACTIVE" && thread.followupsSent >= thread.followupsTotal) {
+    console.log(`${tag} Email reply-wait elapsed (no reply) — archiving`);
+    await archiveThread(thread.id, "No reply within the reply-wait window after the final email");
   }
 }
 
@@ -1049,7 +1071,7 @@ async function processWhatsApp(
     }
 
     const nextFollowup = config.followups?.[0];
-    const nextAt = nextFollowup ? daysFromNow(nextFollowup.afterDays) : null;
+    const nextAt = scheduleAfterSend(config, nextFollowup);
 
     const ok = await commitSentMessage(
       thread.id, account.id,
@@ -1118,7 +1140,7 @@ async function processWhatsApp(
     }
 
     const nextFollowup = config.followups?.[thread.followupsSent + 1];
-    const nextAt = nextFollowup ? daysFromNow(nextFollowup.afterDays) : null;
+    const nextAt = scheduleAfterSend(config, nextFollowup);
     const newSent = thread.followupsSent + 1;
 
     const ok = await commitSentMessage(
@@ -1134,12 +1156,15 @@ async function processWhatsApp(
       },
       tag,
     );
-    if (ok) {
-      console.log(`${tag} WhatsApp follow-up ${newSent}/${thread.followupsTotal} sent`);
-      if (!nextAt) {
-        await archiveThread(thread.id, "All WhatsApp follow-ups exhausted");
-      }
-    }
+    if (ok) console.log(`${tag} WhatsApp follow-up ${newSent}/${thread.followupsTotal} sent`);
+    return;
+  }
+
+  // Reply-wait deadline elapsed after the final WhatsApp message with no reply —
+  // archive. (scheduleAfterSend granted the window; reaching here means it expired.)
+  if (thread.status === "ACTIVE" && thread.followupsSent >= thread.followupsTotal) {
+    console.log(`${tag} WhatsApp reply-wait elapsed (no reply) — archiving`);
+    await archiveThread(thread.id, "No reply within the reply-wait window after the final WhatsApp message");
   }
 }
 
@@ -1174,12 +1199,20 @@ async function cancelPendingInvite(
   }
 }
 
-// Idempotent: only writes if the thread is not already ARCHIVED. A second call
+// Idempotent: only writes if the thread is still PENDING/ACTIVE. A second call
 // (e.g., concurrent timeout sweep) is a no-op and preserves the original
 // archivedAt / archivedReason.
+//
+// The status guard is `in: [PENDING, ACTIVE]` rather than `not: ARCHIVED` so we
+// never clobber a REPLIED or PAUSED thread. Every archiveThread caller runs
+// inside processThread, which slow-path API calls can straddle: a reply webhook
+// (→ REPLIED) or a sibling-reply pause (→ PAUSED) can land AFTER processThread
+// read the row but BEFORE this archive. The worker must never auto-archive a
+// candidate who just replied — that transition always wins. (ARCHIVED is also
+// excluded, preserving the original idempotency.)
 export async function archiveThread(threadId: string, reason: string): Promise<void> {
   await prisma.channelThread.updateMany({
-    where: { id: threadId, status: { not: "ARCHIVED" } },
+    where: { id: threadId, status: { in: ["PENDING", "ACTIVE"] } },
     data: {
       status: "ARCHIVED",
       archivedAt: new Date(),
@@ -1295,6 +1328,32 @@ function minutesFromNow(minutes: number): Date {
 
 function daysFromNow(days: number): Date {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+}
+
+// Fallback reply-wait window when a channel config doesn't set replyWaitDays.
+const DEFAULT_REPLY_WAIT_DAYS = 5;
+
+// Schedule the worker's next visit after a successful send.
+//
+// • Another follow-up remains → schedule it (afterDays).
+// • That was the FINAL message → schedule the reply-wait deadline. We do NOT
+//   archive on the spot: the candidate gets `replyWaitDays` to respond (caught
+//   by webhook or pollChatReplies). Only when this deadline fires with the
+//   thread still un-replied does the terminal "followupsSent >= followupsTotal"
+//   branch archive it.
+//
+// Critically this is NEVER null. A resting PENDING/ACTIVE thread must always
+// carry a non-null nextActionAt, so the process-tasks heal cron can treat
+// (status IN PENDING|ACTIVE, nextActionAt IS NULL) as "crashed mid-claim"
+// without ever resurrecting a thread that is legitimately parked waiting for a
+// reply. (That ambiguity is exactly what wrongly auto-archived candidates with
+// zero reply window.)
+function scheduleAfterSend(
+  config: { replyWaitDays?: number },
+  nextFollowup: FollowupRule | undefined,
+): Date {
+  if (nextFollowup) return daysFromNow(nextFollowup.afterDays);
+  return daysFromNow(config.replyWaitDays ?? DEFAULT_REPLY_WAIT_DAYS);
 }
 
 function startOfToday(): Date {

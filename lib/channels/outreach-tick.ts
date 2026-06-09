@@ -160,7 +160,8 @@ export async function pollJobInviteAcceptances(requisitionId?: string): Promise<
         accountApiKey: acc.apiKey ?? undefined,
       });
     } catch (err: any) {
-      console.warn(`[OutreachTick] pollInviteAcceptances: listSentInvitations failed for account ${acc.accountId} — skipping batch to avoid false positives: ${err.message}`);
+      const cause = err.cause ? ` (cause: ${err.cause?.message ?? err.cause})` : "";
+      console.warn(`[OutreachTick] pollInviteAcceptances: listSentInvitations failed for account ${acc.accountId} — skipping batch to avoid false positives: ${err.message}${cause}`);
       continue;
     }
 

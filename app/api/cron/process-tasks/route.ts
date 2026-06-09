@@ -60,6 +60,16 @@ export async function GET(req: NextRequest) {
     // (status IN PENDING|ACTIVE, nextActionAt IS NULL). Without this
     // recovery the candidate's outreach silently stops.
     //
+    // INVARIANT this relies on: a resting PENDING/ACTIVE thread must ALWAYS
+    // carry a non-null nextActionAt (every send path schedules one via
+    // scheduleAfterSend — including the post-final-message reply-wait window;
+    // terminal "no DM configured" archives instead of parking on null). So
+    // (status IN PENDING|ACTIVE, nextActionAt IS NULL) older than the claim
+    // window unambiguously means "crashed mid-claim" and is safe to re-arm.
+    // Do NOT reintroduce a code path that leaves a live thread at null
+    // nextActionAt as a resting state — that is exactly what caused candidates
+    // to be resurrected here and then auto-archived with zero reply window.
+    //
     // 10-minute floor on createdAt / pendingSendStartedAt avoids racing
     // with an in-flight tick (claim → processThread window is sub-second).
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);

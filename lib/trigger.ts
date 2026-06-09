@@ -1,3 +1,5 @@
+import { runOutreachTick } from "@/lib/channels/outreach-tick";
+
 /**
  * Trigger the process-tasks endpoint.
  * Used by after() callbacks and the safety-net cron.
@@ -31,18 +33,6 @@ export async function triggerProcessing(): Promise<void> {
   }
 }
 
-export async function triggerOutreach(): Promise<void> {
-  const base = getBaseUrl();
-  const url = `${base}/api/cron/outreach-tick`;
-  console.log(`[Trigger] Calling ${url} (CRON_SECRET set: ${!!process.env.CRON_SECRET})`);
-  try {
-    fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${process.env.CRON_SECRET}`,
-      },
-    }).catch((err) => console.error("[Trigger] Outreach fetch failed:", err));
-  } catch (err) {
-    console.error("[Trigger] Failed to trigger outreach:", err);
-  }
+export function triggerOutreach(): void {
+  runOutreachTick().catch((err) => console.error("[Trigger] Outreach tick failed:", err));
 }

@@ -19,6 +19,8 @@
  *   3. Merge both into a final scored result
  */
 
+import { isFullTimeRole } from "@/lib/extract-resume";
+
 // ─── Types ─────────────────────────────────────────────────────────
 
 export interface ScoringRules {
@@ -460,6 +462,7 @@ export function computeCareerStats(workExperience: any[]): CareerStats {
   let totalMonths = 0;
 
   for (const exp of workExperience) {
+    if (!isFullTimeRole(exp.position || "")) continue;
     const company = (exp.company || "Unknown").trim();
     const { months } = parseMonthYear(exp.start, exp.end);
     totalMonths += months;

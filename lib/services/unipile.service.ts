@@ -428,13 +428,18 @@ export async function listSentInvitations(params: {
   const { dsn, apiKey } = resolveDsnAndKey(params.accountDsn, params.accountApiKey);
   const limit = Math.min(params.limit ?? 100, 100); // Unipile hard cap is 100
   const url = `${dsn}/api/v1/users/invite/sent?account_id=${encodeURIComponent(params.accountId)}&limit=${limit}`;
-  const response = await fetch(url, {
-    headers: { "X-API-KEY": apiKey, "Accept": "application/json" },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`listSentInvitations HTTP ${response.status}: ${body.slice(0, 200)}`);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { "X-API-KEY": apiKey, "Accept": "application/json" },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (err: any) {
+    wrapFetchError(err);
+  }
+  if (!response!.ok) {
+    const body = await response!.text().catch(() => "");
+    throw new Error(`listSentInvitations HTTP ${response!.status}: ${body.slice(0, 200)}`);
   }
   const data = await response.json();
   const items: any[] = data.items ?? data ?? [];

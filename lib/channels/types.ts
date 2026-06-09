@@ -28,6 +28,7 @@ export interface LinkedInConfig {
   inviteRules: LinkedInInviteRule[];
   archiveAfterInviteDays: number; // archive if invite not accepted within N days
   followups: FollowupRule[];      // [0] = first DM after connect (or first followup for InMail)
+  replyWaitDays?: number;         // after the LAST follow-up, wait N days for a reply before archiving
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ export interface EmailConfig {
   replyTo?: string;
   contactRetryMinutes?: number; // how long to wait before retrying when no email found (default 60)
   contactRetryMaxDays?: number; // give up after N days of retrying (default 7)
+  replyWaitDays?: number;       // after the LAST follow-up, wait N days for a reply before archiving
 }
 
 // ─── WhatsApp ─────────────────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ export interface WAConfig {
   quietHours?: QuietHours;
   contactRetryMinutes?: number; // how long to wait before retrying when no phone found (default 60)
   contactRetryMaxDays?: number; // give up after N days of retrying (default 7)
+  replyWaitDays?: number;       // after the LAST follow-up, wait N days for a reply before archiving
 }
 
 export type ChannelConfig = LinkedInConfig | EmailConfig | WAConfig;
@@ -105,6 +108,15 @@ function validateFollowup(f: unknown, index: number): ValidationResult {
   }
   if (typeof fu.template !== "string" || !fu.template.trim()) {
     return { ok: false, error: `followups[${index}].template is required` };
+  }
+  return { ok: true };
+}
+
+// Shared optional reply-wait validator — same rules across all channel types.
+function validateReplyWaitDays(config: Record<string, unknown>): ValidationResult {
+  if (config.replyWaitDays === undefined) return { ok: true };
+  if (typeof config.replyWaitDays !== "number" || config.replyWaitDays < 1) {
+    return { ok: false, error: "replyWaitDays must be a positive number (days to wait for a reply after the final follow-up)" };
   }
   return { ok: true };
 }
@@ -146,6 +158,8 @@ export function validateLinkedInConfig(c: unknown): ValidationResult {
     const r = validateFollowup(config.followups[i], i);
     if (!r.ok) return r;
   }
+  const replyWait = validateReplyWaitDays(config);
+  if (!replyWait.ok) return replyWait;
   return { ok: true };
 }
 
@@ -183,6 +197,8 @@ export function validateEmailConfig(c: unknown): ValidationResult {
       return { ok: false, error: "contactRetryMaxDays must be a positive number" };
     }
   }
+  const replyWait = validateReplyWaitDays(config);
+  if (!replyWait.ok) return replyWait;
   return { ok: true };
 }
 
@@ -229,6 +245,8 @@ export function validateWAConfig(c: unknown): ValidationResult {
       return { ok: false, error: "quietHours.tz is required" };
     }
   }
+  const replyWait = validateReplyWaitDays(config);
+  if (!replyWait.ok) return replyWait;
   return { ok: true };
 }
 
