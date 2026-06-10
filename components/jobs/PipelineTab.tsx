@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -167,6 +168,10 @@ export function PipelineTab({ requisitionId }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [enriching, setEnriching] = useState(false);
 
+  // Starred / favourites (optimistic local state; reseeded on each pipeline fetch)
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const [starringBulk, setStarringBulk] = useState(false);
+
   // Pending destructive transition — set when the recruiter triggers a move
   // that archives thread state (→ REJECTED, → ARCHIVED, → SHORTLISTED from an
   // active stage, → SOURCED from an active stage). Cleared on confirm/cancel.
@@ -206,6 +211,14 @@ export function PipelineTab({ requisitionId }: Props) {
       const data = await res.json();
       setStages(data.stages ?? {});
       setTotal(data.total ?? 0);
+      // Reseed starred state from fresh server data
+      const ids = new Set<string>();
+      for (const stageKey of Object.keys(data.stages ?? {})) {
+        for (const t of data.stages[stageKey]) {
+          if (t.starred) ids.add(t.id);
+        }
+      }
+      setStarredIds(ids);
     } catch {
       toast.error("Could not load pipeline data");
     } finally {
@@ -256,10 +269,11 @@ export function PipelineTab({ requisitionId }: Props) {
 
   // Core API call — called after any confirmation gates have passed.
   async function commitStageChange(taskId: string, fromStage: CandidateStage, newStage: CandidateStage, movedTask: PipelineTask, reason?: string) {
+    const archiveNote = (newStage === "REJECTED" || newStage === "ARCHIVED") ? (reason ?? null) : movedTask.archiveNote;
     setStages(prev => {
       const next = { ...prev };
       next[fromStage] = (next[fromStage] ?? []).filter(t => t.id !== taskId);
-      next[newStage] = [{ ...movedTask, stage: newStage, stageUpdatedAt: new Date().toISOString() }, ...(next[newStage] ?? [])];
+      next[newStage] = [{ ...movedTask, stage: newStage, stageUpdatedAt: new Date().toISOString(), archiveNote }, ...(next[newStage] ?? [])];
       return next;
     });
 
@@ -357,6 +371,64 @@ export function PipelineTab({ requisitionId }: Props) {
 
   function clearSelection() { setSelectedIds(new Set()); }
 
+  async function toggleStar(taskId: string) {
+    const next = !starredIds.has(taskId);
+    setStarredIds(prev => {
+      const s = new Set(prev);
+      if (next) s.add(taskId); else s.delete(taskId);
+      return s;
+    });
+    try {
+      await fetch(`/api/tasks/${taskId}/star`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starred: next }),
+      });
+    } catch {
+      setStarredIds(prev => {
+        const s = new Set(prev);
+        if (next) s.delete(taskId); else s.add(taskId);
+        return s;
+      });
+    }
+  }
+
+  async function handleBulkStar() {
+    const taskIds = [...selectedIds];
+    if (!taskIds.length) return;
+    // If any are unstarred, star all; if all already starred, unstar all.
+    const allStarred = taskIds.every(id => starredIds.has(id));
+    const nextStarred = !allStarred;
+    setStarredIds(prev => {
+      const s = new Set(prev);
+      for (const id of taskIds) { if (nextStarred) s.add(id); else s.delete(id); }
+      return s;
+    });
+    setStarringBulk(true);
+    try {
+      await Promise.all(
+        taskIds.map(id =>
+          fetch(`/api/tasks/${id}/star`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ starred: nextStarred }),
+          })
+        )
+      );
+      toast.success(nextStarred ? `Starred ${taskIds.length} candidate${taskIds.length !== 1 ? "s" : ""}` : `Unstarred ${taskIds.length} candidate${taskIds.length !== 1 ? "s" : ""}`);
+    } catch {
+      // revert
+      setStarredIds(prev => {
+        const s = new Set(prev);
+        for (const id of taskIds) { if (nextStarred) s.delete(id); else s.add(id); }
+        return s;
+      });
+      toast.error("Failed to update favourites");
+    } finally {
+      setStarringBulk(false);
+    }
+  }
+
   // Compute selected tasks by stage for bulk actions
   const selectedByStage = useMemo(() => {
     const map: Partial<Record<CandidateStage, string[]>> = {};
@@ -387,6 +459,8 @@ export function PipelineTab({ requisitionId }: Props) {
       }
     }
 
+    const bulkArchiveNote = (newStage === "REJECTED" || newStage === "ARCHIVED") ? (reason ?? null) : null;
+
     // Optimistic UI: move all selected to the target column.
     setStages(prev => {
       const next = { ...prev };
@@ -397,7 +471,7 @@ export function PipelineTab({ requisitionId }: Props) {
             const task = next[s]![idx];
             next[s] = (next[s] ?? []).filter(t => t.id !== id);
             next[newStage] = [
-              { ...task, stage: newStage, stageUpdatedAt: new Date().toISOString() },
+              { ...task, stage: newStage, stageUpdatedAt: new Date().toISOString(), archiveNote: bulkArchiveNote ?? task.archiveNote },
               ...(next[newStage] ?? []),
             ];
             break;
@@ -812,6 +886,8 @@ export function PipelineTab({ requisitionId }: Props) {
                 onColumnSelectAll={handleColumnSelectAll}
                 onColumnDeselectAll={handleColumnDeselectAll}
                 showCheckboxes={showCheckboxes}
+                starredIds={starredIds}
+                onStar={toggleStar}
               />
             ))}
           </div>
@@ -1072,6 +1148,32 @@ export function PipelineTab({ requisitionId }: Props) {
           </Button>
 
           {(() => {
+            const allStarred = [...selectedIds].every(id => starredIds.has(id));
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-7 text-xs gap-1",
+                  allStarred ? "text-amber-500 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20" : ""
+                )}
+                onClick={handleBulkStar}
+                disabled={starringBulk}
+              >
+                <svg
+                  className={cn("h-3 w-3", allStarred ? "fill-amber-500" : "fill-none")}
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                </svg>
+                {allStarred ? "Unstar" : "Star"}
+              </Button>
+            );
+          })()}
+
+          {(() => {
             const shortlistedCount = (selectedByStage["SHORTLISTED"] ?? []).length;
             return (
               <Button
@@ -1171,6 +1273,11 @@ function ArchiveRow({
           {task.currentDesignation || task.headline || "—"}
           {task.currentOrg && <span> · {task.currentOrg}</span>}
         </p>
+        {task.archiveNote && (
+          <p className="text-xs text-muted-foreground/60 truncate mt-0.5" title={task.archiveNote}>
+            {task.archiveNote}
+          </p>
+        )}
       </div>
 
       {task.scorePercent !== null && (

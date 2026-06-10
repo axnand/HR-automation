@@ -18,6 +18,7 @@
 import { prisma } from "@/lib/prisma";
 import { CandidateStage } from "@prisma/client";
 import { fanOutToChannels } from "@/lib/channels/fan-out";
+import { sendRejectionNotifications } from "@/lib/channels/send-rejection";
 
 export const SYSTEM_DERIVED = new Set<CandidateStage>([
   CandidateStage.CONTACT_REQUESTED,
@@ -213,11 +214,17 @@ export async function applyStageTransition(input: ApplyTransitionInput): Promise
       // StageEvent inside this transaction.
       await tx.$executeRaw`SELECT set_config('app.stage_event_explicit', 'true', true)`;
 
+      const archiveNoteWrite =
+        (toStage === "REJECTED" || toStage === "ARCHIVED") && reason
+          ? { archiveNote: reason }
+          : {};
+
       const t = await tx.task.update({
         where: { id: taskId },
         data: {
           stage: toStage,
           ...manualStageWrite,
+          ...archiveNoteWrite,
           stageUpdatedAt: now,
         },
         select: { id: true, stage: true, manualStage: true, stageUpdatedAt: true, jobId: true },
@@ -357,6 +364,13 @@ export async function applyStageTransition(input: ApplyTransitionInput): Promise
     ) {
       fanOutToChannels(taskId, updated.jobId).catch(err =>
         console.error("[applyStageTransition] fanOut failed:", err),
+      );
+    }
+
+    if (transition.effect === "archiveAll" &&
+        (toStage === CandidateStage.REJECTED || toStage === CandidateStage.ARCHIVED)) {
+      sendRejectionNotifications(taskId, toStage, reason).catch(err =>
+        console.error("[applyStageTransition] sendRejectionNotifications failed:", err),
       );
     }
 

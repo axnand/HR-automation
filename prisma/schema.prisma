@@ -51,6 +51,7 @@ enum OutreachType {
   EMAIL // email message (any position in sequence)
   FOLLOWUP // any follow-up message on any channel
   WHATSAPP // WhatsApp message
+  REJECTION // auto-sent notification when recruiter sets stage to REJECTED or ARCHIVED
 }
 
 enum AccountType {
@@ -234,6 +235,8 @@ model Task {
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
   deletedReason  String?
+  archiveNote    String?         @db.Text
+  starred        Boolean         @default(false)
 
   // Phase 6 / EC-10.1 — canonical candidate identity. Multiple Tasks may
   // share the same candidateProfileId across requisitions; this is the

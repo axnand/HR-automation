@@ -23,6 +23,7 @@ interface TaskResult {
   source?: string;
   sourceFileName?: string | null;
   hasResume?: boolean;
+  starred?: boolean;
   overrides?: any[];
 }
 
@@ -64,6 +65,10 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [starredIds, setStarredIds] = useState<Set<string>>(
+    () => new Set(data.tasks.filter(t => t.starred).map(t => t.id))
+  );
+  const [filterStarred, setFilterStarred] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMsg, setExportMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
@@ -91,6 +96,29 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
     setSelectMode(false);
     setSelectedIds(new Set());
     setExportMsg(null);
+  }
+
+  async function toggleStar(taskId: string) {
+    const next = !starredIds.has(taskId);
+    setStarredIds(prev => {
+      const s = new Set(prev);
+      if (next) s.add(taskId); else s.delete(taskId);
+      return s;
+    });
+    try {
+      await fetch(`/api/tasks/${taskId}/star`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starred: next }),
+      });
+    } catch {
+      // revert on failure
+      setStarredIds(prev => {
+        const s = new Set(prev);
+        if (next) s.delete(taskId); else s.add(taskId);
+        return s;
+      });
+    }
   }
 
   async function runExport(mode: "xlsx" | "sheet") {
@@ -212,6 +240,7 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
           const fullName = (scrapedName.trim() || extractedName).toLowerCase();
           if (!fullName.includes(search.toLowerCase().trim())) return false;
         }
+        if (filterStarred && !starredIds.has(task.id)) return false;
         if (filterFit !== "All" && analysis?.recommendation !== filterFit) return false;
         if (filterLocation.trim()) {
           const loc = (analysis?.candidateInfo?.currentLocation || profile?.location || "").toLowerCase();
@@ -256,7 +285,7 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
         }
         return 0;
       });
-  }, [completedTasks, search, filterFit, filterLocation, filterMinExp, filterDate, sort]);
+  }, [completedTasks, search, filterFit, filterLocation, filterMinExp, filterDate, sort, filterStarred, starredIds]);
 
   const kpiStats = useMemo(() => {
     let strong = 0, moderate = 0, notFit = 0;
@@ -346,6 +375,25 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
                     ]}
                   />
                   <FilterDivider />
+                  <button
+                    onClick={() => setFilterStarred(v => !v)}
+                    title={filterStarred ? "Show all" : "Show starred only"}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border",
+                      filterStarred
+                        ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                        : "bg-transparent text-muted-foreground border-transparent hover:bg-muted"
+                    )}
+                  >
+                    <svg className={cn("w-3.5 h-3.5", filterStarred ? "fill-amber-500 text-amber-500" : "fill-none text-muted-foreground")} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                    </svg>
+                    Starred
+                    {filterStarred && starredIds.size > 0 && (
+                      <span className="text-[10px] font-bold">{starredIds.size}</span>
+                    )}
+                  </button>
+                  <FilterDivider />
                   <SortSelect
                     value={sort}
                     onChange={setSort}
@@ -425,6 +473,8 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
                       onOpenDuplicates={onOpenDuplicates}
                       selectMode={selectMode}
                       isSelected={isSelected}
+                      isStarred={starredIds.has(task.id)}
+                      onStar={() => toggleStar(task.id)}
                     />
                   </div>
                 );
@@ -576,7 +626,7 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
 
 // ─── Sub-components ────────────────────────────────────────────────────
 
-function ProfileCard({ task, jobConfig, expanded, onToggle, isDuplicate, onOpenDuplicates, selectMode, isSelected }: { task: TaskResult; jobConfig?: any; expanded: boolean; onToggle: () => void; isDuplicate?: boolean; onOpenDuplicates?: () => void; selectMode?: boolean; isSelected?: boolean; }) {
+function ProfileCard({ task, jobConfig, expanded, onToggle, isDuplicate, onOpenDuplicates, selectMode, isSelected, isStarred, onStar }: { task: TaskResult; jobConfig?: any; expanded: boolean; onToggle: () => void; isDuplicate?: boolean; onOpenDuplicates?: () => void; selectMode?: boolean; isSelected?: boolean; isStarred?: boolean; onStar?: () => void; }) {
   const profile = task.result;
   const analysis = task.analysisResult;
   if (!profile && !analysis) return null;
@@ -595,9 +645,12 @@ function ProfileCard({ task, jobConfig, expanded, onToggle, isDuplicate, onOpenD
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
-        className="w-full text-left p-4 flex items-center gap-4 hover:bg-accent/30 transition-colors"
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
+        className="w-full text-left p-4 flex items-center gap-4 hover:bg-accent/30 transition-colors cursor-pointer"
       >
         <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-cyan-400 flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0 overflow-hidden">
           {profile?.profile_picture_url ? (
@@ -674,6 +727,21 @@ function ProfileCard({ task, jobConfig, expanded, onToggle, isDuplicate, onOpenD
           )}
         </div>
 
+        <button
+          onClick={e => { e.stopPropagation(); onStar?.(); }}
+          title={isStarred ? "Remove from favourites" : "Add to favourites"}
+          className={cn(
+            "shrink-0 p-1.5 rounded-lg transition-colors",
+            isStarred
+              ? "text-amber-400 hover:text-amber-500"
+              : "text-muted-foreground/40 hover:text-amber-400"
+          )}
+        >
+          <svg className={cn("w-4 h-4", isStarred ? "fill-amber-400" : "fill-none")} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+          </svg>
+        </button>
+
         {analysis && (
           <div className="flex flex-col items-end gap-1.5 shrink-0 min-w-[72px] pr-1">
             <div className="flex items-center gap-3">
@@ -727,7 +795,7 @@ function ProfileCard({ task, jobConfig, expanded, onToggle, isDuplicate, onOpenD
             </div>
           </div>
         )}
-      </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-border p-4 space-y-4">

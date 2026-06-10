@@ -35,6 +35,8 @@ export async function GET(
         analysisResult: true,
         source: true,
         sourceFileName: true,
+        archiveNote: true,
+        starred: true,
         createdAt: true,
         outreachMessages: { select: { channel: true, status: true } },
         channelThreads: {
@@ -98,6 +100,9 @@ export async function GET(
           "",
         scorePercent: analysis?.scorePercent ?? null,
         recommendation: analysis?.recommendation ?? null,
+        remarks: analysis?.remarks ?? null,
+        archiveNote: t.archiveNote ?? null,
+        starred: t.starred,
         profilePictureUrl: profile?.profile_picture_url || null,
         publicId: profile?.public_identifier || null,
         outreachMessages: t.outreachMessages ?? [],

@@ -53,6 +53,7 @@ export async function GET(
         errorMessage: true,
         retryCount: true,
         createdAt: true,
+        starred: true,
         overrides: {
           select: {
             ruleKey: true,
@@ -83,6 +84,7 @@ export async function GET(
         runId: t.jobId,
         runIndex: runIndexById[t.jobId] ?? 1,
         addedAt: t.createdAt,
+        starred: t.starred,
         overrides: t.overrides,
       })),
     });
