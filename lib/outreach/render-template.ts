@@ -5,6 +5,7 @@ export interface TemplateVars {
   company: string;
   role: string;
   score: string;
+  reason: string; // rejection/archive reason, empty string when not applicable
 }
 
 export function buildVars(profile: any, analysis: any): TemplateVars {
@@ -37,7 +38,7 @@ export function buildVars(profile: any, analysis: any): TemplateVars {
   const duration = Date.now() - startTime; // Calculate duration
   console.log(`buildVars processing took ${duration}ms`); // Log duration
 
-  return { name: fullName, firstName, lastName, company, role, score };
+  return { name: fullName, firstName, lastName, company, role, score, reason: "" };
 }
 
 // Maps common spaced/alternate spellings to their canonical camelCase key.
@@ -46,6 +47,8 @@ const VAR_ALIASES: Record<string, keyof TemplateVars> = {
   "first name": "firstName",
   "last name": "lastName",
   "full name": "name",
+  "rejection reason": "reason",
+  "archive reason": "reason",
 };
 
 /**
@@ -71,7 +74,8 @@ export function renderTemplate(template: string, vars: TemplateVars): string {
     .replace(/\{\{lastName\}\}/gi, vars.lastName)
     .replace(/\{\{company\}\}/gi, vars.company)
     .replace(/\{\{role\}\}/gi, vars.role)
-    .replace(/\{\{score\}\}/gi, vars.score);
+    .replace(/\{\{score\}\}/gi, vars.score)
+    .replace(/\{\{reason\}\}/gi, vars.reason);
 
   // Safety guard: any remaining {{...}} token is unknown — block the send
   // rather than deliver a literal placeholder to the candidate.

@@ -24,7 +24,7 @@ export async function PATCH(
   try {
     const { taskId } = await params;
     const body = await req.json();
-    const { stage, reason } = body as { stage?: string; reason?: string };
+    const { stage, reason, notify } = body as { stage?: string; reason?: string; notify?: boolean };
 
     if (!stage || !VALID_STAGES.has(stage)) {
       return NextResponse.json({ error: "Invalid stage" }, { status: 400 });
@@ -37,6 +37,7 @@ export async function PATCH(
       taskId,
       toStage: stage as CandidateStage,
       reason: reason ?? null,
+      notify: notify !== false,
       expectedStageUpdatedAt,
     });
 

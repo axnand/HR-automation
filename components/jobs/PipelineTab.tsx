@@ -49,6 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Props {
   requisitionId: string;
@@ -162,6 +163,12 @@ export function PipelineTab({ requisitionId }: Props) {
   const [query, setQuery] = useState("");
   const [stageScope, setStageScope] = useState<CandidateStage | "ALL">("ALL");
   const [transitionReason, setTransitionReason] = useState("");
+  // Free-text reason shown when "Other" is selected. Saved as the actual reason
+  // when provided; falls back to "Other" if left blank.
+  const [customReason, setCustomReason] = useState("");
+  // When rejecting, whether to auto-send the candidate a notification on their
+  // outreach channel. Defaults to on; recruiter can opt out per-rejection.
+  const [notifyCandidate, setNotifyCandidate] = useState(true);
   const [archiveFilter, setArchiveFilter] = useState<"ALL" | CandidateStage>("ALL");
 
   // Bulk selection
@@ -268,7 +275,7 @@ export function PipelineTab({ requisitionId }: Props) {
   }
 
   // Core API call — called after any confirmation gates have passed.
-  async function commitStageChange(taskId: string, fromStage: CandidateStage, newStage: CandidateStage, movedTask: PipelineTask, reason?: string) {
+  async function commitStageChange(taskId: string, fromStage: CandidateStage, newStage: CandidateStage, movedTask: PipelineTask, reason?: string, notify?: boolean) {
     const archiveNote = (newStage === "REJECTED" || newStage === "ARCHIVED") ? (reason ?? null) : movedTask.archiveNote;
     setStages(prev => {
       const next = { ...prev };
@@ -280,7 +287,7 @@ export function PipelineTab({ requisitionId }: Props) {
     try {
       const res = await fetch(
         `/api/requisitions/${requisitionId}/candidates/${taskId}`,
-        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: newStage, ...(reason ? { reason } : {}) }) },
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: newStage, ...(reason ? { reason } : {}), ...(notify === false ? { notify: false } : {}) }) },
       );
       if (!res.ok) {
         const { status, message } = await readStageError(res);
@@ -443,7 +450,7 @@ export function PipelineTab({ requisitionId }: Props) {
   // Server processes each task in its own transaction and returns per-task
   // outcomes; UI reverts only the cards that failed.
   // Core bulk API — called after any confirmation gates have passed.
-  async function executeBulkMove(taskIds: string[], newStage: CandidateStage, reason?: string) {
+  async function executeBulkMove(taskIds: string[], newStage: CandidateStage, reason?: string, notify?: boolean) {
     // Snapshot original stage per task so we can selectively revert failures.
     // Same reasoning as handleStageChange: we don't send `expected` (per-task
     // If-Match) because the only realistic "concurrent edit" is the system's
@@ -486,7 +493,7 @@ export function PipelineTab({ requisitionId }: Props) {
       const res = await fetch(`/api/requisitions/${requisitionId}/candidates/bulk-stage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskIds, stage: newStage, ...(reason ? { reason } : {}) }),
+        body: JSON.stringify({ taskIds, stage: newStage, ...(reason ? { reason } : {}), ...(notify === false ? { notify: false } : {}) }),
       });
       if (!res.ok) {
         // Hard failure — revert everything.
@@ -954,7 +961,7 @@ export function PipelineTab({ requisitionId }: Props) {
       {/* Destructive-transition confirmation dialog */}
       <Dialog
         open={!!pendingTransition}
-        onOpenChange={open => { if (!open) { setPendingTransition(null); setTransitionReason(""); } }}
+        onOpenChange={open => { if (!open) { setPendingTransition(null); setTransitionReason(""); setCustomReason(""); setNotifyCandidate(true); } }}
       >
         <DialogContent className="max-w-sm">
           {pendingTransition && (() => {
@@ -975,6 +982,10 @@ export function PipelineTab({ requisitionId }: Props) {
               pendingTransition.toStage === "REJECTED" || pendingTransition.toStage === "ARCHIVED";
             const reasonOptions =
               pendingTransition.toStage === "REJECTED" ? REJECT_REASONS : ARCHIVE_REASONS;
+            // A rejection notification only goes out when there's a live
+            // conversation to send it through, so only surface the toggle when
+            // the candidate(s) actually have active outreach.
+            const canNotify = pendingTransition.toStage === "REJECTED" && hasActive;
             return (
               <>
                 <DialogHeader>
@@ -997,11 +1008,43 @@ export function PipelineTab({ requisitionId }: Props) {
                         ))}
                       </SelectContent>
                     </Select>
+                    {transitionReason === "Other" && (
+                      <Textarea
+                        autoFocus
+                        value={customReason}
+                        onChange={e => setCustomReason(e.target.value)}
+                        placeholder="Describe the reason…"
+                        rows={2}
+                        className="text-sm"
+                      />
+                    )}
+                  </div>
+                )}
+
+                {canNotify && (
+                  <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 p-2.5 dark:border-amber-700/60 dark:bg-amber-950/40">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <Checkbox
+                        checked={notifyCandidate}
+                        onCheckedChange={v => setNotifyCandidate(v === true)}
+                        className="mt-0.5"
+                      />
+                      <span className="text-xs leading-relaxed">
+                        <span className="font-medium text-amber-900 dark:text-amber-200">
+                          Notify {pendingTransition.kind === "bulk" ? "candidates" : "the candidate"} automatically
+                        </span>
+                        <span className="block text-amber-800/80 dark:text-amber-200/70">
+                          A message will be sent on their existing outreach channel
+                          {pendingTransition.kind === "bulk" ? ` (the ${pendingTransition.activeCount} with active outreach)` : ""}.
+                          Uncheck to reject silently and contact them yourself.
+                        </span>
+                      </span>
+                    </label>
                   </div>
                 )}
 
                 <DialogFooter className="gap-2 sm:gap-0">
-                  <Button variant="outline" size="sm" onClick={() => { setPendingTransition(null); setTransitionReason(""); }}>
+                  <Button variant="outline" size="sm" onClick={() => { setPendingTransition(null); setTransitionReason(""); setCustomReason(""); setNotifyCandidate(true); }}>
                     Cancel
                   </Button>
                   <Button
@@ -1009,15 +1052,23 @@ export function PipelineTab({ requisitionId }: Props) {
                     size="sm"
                     onClick={async () => {
                       const p = pendingTransition;
-                      const r = transitionReason || undefined;
+                      // "Other" → use the typed text, or fall back to "Other" if blank.
+                      const r =
+                        transitionReason === "Other"
+                          ? (customReason.trim() || "Other")
+                          : (transitionReason || undefined);
+                      // Only meaningful for REJECTED with active outreach; harmless otherwise.
+                      const notify = canNotify ? notifyCandidate : undefined;
                       setPendingTransition(null);
                       setTransitionReason("");
+                      setCustomReason("");
+                      setNotifyCandidate(true);
                       if (!p) return;
                       if (p.kind === "single") {
                         const movedTask = stages[p.fromStage]?.find(t => t.id === p.taskId);
-                        if (movedTask) await commitStageChange(p.taskId, p.fromStage, p.toStage, movedTask, r);
+                        if (movedTask) await commitStageChange(p.taskId, p.fromStage, p.toStage, movedTask, r, notify);
                       } else {
-                        await executeBulkMove(p.taskIds, p.toStage, r);
+                        await executeBulkMove(p.taskIds, p.toStage, r, notify);
                       }
                     }}
                   >

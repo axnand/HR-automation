@@ -40,6 +40,7 @@ interface BulkStageBody {
   taskIds?: unknown;
   stage?: unknown;
   reason?: unknown;
+  notify?: unknown;
   expected?: unknown;
 }
 
@@ -48,7 +49,7 @@ export async function POST(
 ) {
   try {
     const body = (await req.json()) as BulkStageBody;
-    const { taskIds, stage, reason, expected } = body;
+    const { taskIds, stage, reason, notify, expected } = body;
 
     if (!Array.isArray(taskIds) || taskIds.length === 0) {
       return NextResponse.json({ error: "taskIds must be a non-empty array" }, { status: 400 });
@@ -77,6 +78,7 @@ export async function POST(
 
     const toStage = stage as CandidateStage;
     const reasonStr = (reason ?? null) as string | null;
+    const notifyFlag = notify !== false; // default true; suppress candidate notification when explicitly false
 
     // Process sequentially so a single misbehaving candidate doesn't
     // exhaust the connection pool. With ≤500 cap this is fast enough
@@ -88,6 +90,7 @@ export async function POST(
         taskId,
         toStage,
         reason: reasonStr,
+        notify: notifyFlag,
         expectedStageUpdatedAt: expectedTs,
       });
 

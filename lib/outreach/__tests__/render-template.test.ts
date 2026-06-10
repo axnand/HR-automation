@@ -9,6 +9,7 @@ const VARS: TemplateVars = {
   company: "Acme Corp",
   role: "Engineer",
   score: "85%",
+  reason: "",
 };
 
 describe("renderTemplate — canonical camelCase tokens", () => {

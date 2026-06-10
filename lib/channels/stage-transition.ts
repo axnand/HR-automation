@@ -157,6 +157,8 @@ export type ApplyTransitionInput = {
   taskId: string;
   toStage: CandidateStage;
   reason?: string | null;
+  /** When false, suppress the auto candidate-rejection notification. Default true. */
+  notify?: boolean;
   /** Optional optimistic-concurrency check. ISO string of the last-known stageUpdatedAt. */
   expectedStageUpdatedAt?: string | null;
 };
@@ -173,7 +175,7 @@ export type ApplyTransitionResult =
   | { ok: false; kind: "internal"; error: string };
 
 export async function applyStageTransition(input: ApplyTransitionInput): Promise<ApplyTransitionResult> {
-  const { taskId, toStage, reason, expectedStageUpdatedAt } = input;
+  const { taskId, toStage, reason, notify, expectedStageUpdatedAt } = input;
 
   try {
     const existing = await prisma.task.findUnique({
@@ -367,8 +369,11 @@ export async function applyStageTransition(input: ApplyTransitionInput): Promise
       );
     }
 
-    if (transition.effect === "archiveAll" &&
-        (toStage === CandidateStage.REJECTED || toStage === CandidateStage.ARCHIVED)) {
+    // Auto-notify the candidate on REJECTED only. ARCHIVED is often "role
+    // filled / on hold / parking" — it must not fire a "not moving forward"
+    // message. The recruiter can also opt out per-rejection (notify === false).
+    // sendRejectionNotifications re-checks the stage and is idempotent.
+    if (transition.effect === "archiveAll" && toStage === CandidateStage.REJECTED && notify !== false) {
       sendRejectionNotifications(taskId, toStage, reason).catch(err =>
         console.error("[applyStageTransition] sendRejectionNotifications failed:", err),
       );

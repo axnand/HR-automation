@@ -34,6 +34,10 @@ export interface LinkedInConfig {
   // DM before the followups[] sequence. If unset, the connection note's content
   // is used as the opener instead.
   connectedFirstMessage?: string;
+  // Auto-sent when recruiter moves candidate to REJECTED or ARCHIVED. Supports
+  // the same {{variables}} as outreach templates, plus {{reason}} for the
+  // recruiter's stated reason. If unset, no message is sent (opt-in).
+  rejectionTemplate?: string;
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
@@ -55,6 +59,10 @@ export interface EmailConfig {
   contactRetryMinutes?: number; // how long to wait before retrying when no email found (default 60)
   contactRetryMaxDays?: number; // give up after N days of retrying (default 7)
   replyWaitDays?: number;       // after the LAST follow-up, wait N days for a reply before archiving
+  // Auto-sent when recruiter moves candidate to REJECTED or ARCHIVED. Opt-in.
+  // Sent as a reply in the existing email thread when providerThreadId is set.
+  rejectionTemplate?: string;
+  rejectionSubjectTemplate?: string; // defaults to "Application Status Update" when unset
 }
 
 // ─── WhatsApp ─────────────────────────────────────────────────────────────────
@@ -80,6 +88,8 @@ export interface WAConfig {
   contactRetryMinutes?: number; // how long to wait before retrying when no phone found (default 60)
   contactRetryMaxDays?: number; // give up after N days of retrying (default 7)
   replyWaitDays?: number;       // after the LAST follow-up, wait N days for a reply before archiving
+  // Auto-sent when recruiter moves candidate to REJECTED or ARCHIVED. Opt-in.
+  rejectionTemplate?: string;
 }
 
 export type ChannelConfig = LinkedInConfig | EmailConfig | WAConfig;
@@ -168,6 +178,9 @@ export function validateLinkedInConfig(c: unknown): ValidationResult {
   if (config.connectedFirstMessage !== undefined && typeof config.connectedFirstMessage !== "string") {
     return { ok: false, error: "connectedFirstMessage must be a string" };
   }
+  if (config.rejectionTemplate !== undefined && typeof config.rejectionTemplate !== "string") {
+    return { ok: false, error: "rejectionTemplate must be a string" };
+  }
   return { ok: true };
 }
 
@@ -207,6 +220,12 @@ export function validateEmailConfig(c: unknown): ValidationResult {
   }
   const replyWait = validateReplyWaitDays(config);
   if (!replyWait.ok) return replyWait;
+  if (config.rejectionTemplate !== undefined && typeof config.rejectionTemplate !== "string") {
+    return { ok: false, error: "rejectionTemplate must be a string" };
+  }
+  if (config.rejectionSubjectTemplate !== undefined && typeof config.rejectionSubjectTemplate !== "string") {
+    return { ok: false, error: "rejectionSubjectTemplate must be a string" };
+  }
   return { ok: true };
 }
 
@@ -255,6 +274,9 @@ export function validateWAConfig(c: unknown): ValidationResult {
   }
   const replyWait = validateReplyWaitDays(config);
   if (!replyWait.ok) return replyWait;
+  if (config.rejectionTemplate !== undefined && typeof config.rejectionTemplate !== "string") {
+    return { ok: false, error: "rejectionTemplate must be a string" };
+  }
   return { ok: true };
 }
 
