@@ -102,22 +102,9 @@ function getInitials(name: string) {
   return name.split(" ").slice(0, 2).map(n => n[0] ?? "").join("").toUpperCase();
 }
 
-const LinkedinIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-    <rect width="4" height="12" x="2" y="9" />
-    <circle cx="4" cy="4" r="2" />
+const LinkedinIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+    <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.55V9h3.57v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z" />
   </svg>
 );
 
@@ -475,13 +462,7 @@ export default function CandidateDetailPage() {
                   className="text-xl font-bold bg-background border border-primary/50 ring-2 ring-primary/20 outline-none rounded px-2 py-0.5 text-foreground tracking-tight min-w-[200px]"
                 />
               ) : (
-                <button
-                  onClick={() => { setNameInput(name); setEditingName(true); }}
-                  className="group flex items-center gap-1.5 hover:bg-muted/30 rounded px-1 -mx-1 transition-colors"
-                >
-                  <h1 className="text-xl font-bold text-foreground tracking-tight">{name}</h1>
-                  <Pencil className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity shrink-0 text-muted-foreground" />
-                </button>
+                <h1 className="text-xl font-bold text-foreground tracking-tight">{name}</h1>
               )}
               {analysis?.recommendation && (
                 <Badge variant="outline" className={cn("text-xs font-semibold px-2.5 py-0.5", recommendationStyle)}>
@@ -493,11 +474,20 @@ export default function CandidateDetailPage() {
                   href={task.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-[#0a66c2] transition-colors inline-flex items-center justify-center rounded-md hover:bg-muted p-1"
+                  className="text-[#0a66c2] hover:bg-[#0a66c2]/10 transition-colors inline-flex items-center justify-center rounded-md p-1"
                   title="View LinkedIn Profile"
                 >
                   <LinkedinIcon className="h-5 w-5" />
                 </a>
+              )}
+              {!editingName && (
+                <button
+                  onClick={() => { setNameInput(name); setEditingName(true); }}
+                  className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="Edit name"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
               )}
             </div>
             <div className="mt-0.5 max-w-xl">

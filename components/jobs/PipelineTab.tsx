@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   RefreshCw, LayoutGrid, Search, X, ExternalLink,
-  ChevronDown, Zap, Trash2, Send,
+  ChevronDown, Zap, Trash2, Send, Pencil, Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -949,7 +949,15 @@ export function PipelineTab({ requisitionId }: Props) {
               ) : (
                 <ul className="divide-y divide-border/60">
                   {archiveRows.map(task => (
-                    <ArchiveRow key={task.id} task={task} onStageChange={handleStageChange} />
+                    <ArchiveRow key={task.id} task={task} requisitionId={requisitionId} onStageChange={handleStageChange} onNoteChange={(id, note) => {
+                      setStages(prev => {
+                        const next = { ...prev };
+                        for (const s of ["REJECTED", "ARCHIVED"] as CandidateStage[]) {
+                          if (next[s]) next[s] = next[s]!.map(t => t.id === id ? { ...t, archiveNote: note } : t);
+                        }
+                        return next;
+                      });
+                    }} />
                   ))}
                 </ul>
               )}
@@ -1286,13 +1294,24 @@ function getInitials(name: string) {
   return name.split(" ").slice(0, 2).map(n => n[0] ?? "").join("").toUpperCase();
 }
 
+const REASON_OPTIONS: Record<"REJECTED" | "ARCHIVED", string[]> = {
+  REJECTED: ["Not a fit", "Overqualified", "Underqualified", "Salary mismatch", "Location constraint", "No response", "Failed interview", "Other"],
+  ARCHIVED: ["Position filled", "On hold", "Budget freeze", "Candidate withdrew", "Duplicate profile", "Not a fit", "Other"],
+};
+
 function ArchiveRow({
   task,
+  requisitionId,
   onStageChange,
+  onNoteChange,
 }: {
   task: PipelineTask;
+  requisitionId: string;
   onStageChange: (taskId: string, stage: CandidateStage) => void;
+  onNoteChange: (taskId: string, note: string | null) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const name = task.name || "Unknown";
   const config = STAGE_CONFIG[task.stage];
   const scoreCls =
@@ -1302,8 +1321,25 @@ function ArchiveRow({
       ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
       : "border-rose-500/40 bg-rose-500/10 text-rose-500";
 
+  const options = REASON_OPTIONS[task.stage as "REJECTED" | "ARCHIVED"] ?? REASON_OPTIONS.REJECTED;
+
+  async function saveNote(note: string | null) {
+    setSaving(true);
+    try {
+      await fetch(`/api/requisitions/${requisitionId}/candidates/${task.id}/archive-note`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      onNoteChange(task.id, note);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
   return (
-    <li className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
+    <li className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors group/row">
       <Avatar className="h-9 w-9 shrink-0">
         <AvatarImage src={task.profilePictureUrl ? `/api/proxy-image?url=${encodeURIComponent(task.profilePictureUrl)}` : undefined} alt={name} />
         <AvatarFallback className={cn("text-white font-bold text-xs bg-linear-to-br", pickGradient(name))}>
@@ -1324,10 +1360,51 @@ function ArchiveRow({
           {task.currentDesignation || task.headline || "—"}
           {task.currentOrg && <span> · {task.currentOrg}</span>}
         </p>
-        {task.archiveNote && (
-          <p className="text-xs text-muted-foreground/60 truncate mt-0.5" title={task.archiveNote}>
-            {task.archiveNote}
-          </p>
+
+        {editing ? (
+          <div className="flex items-center gap-1.5 mt-1" onClick={e => e.stopPropagation()}>
+            <Select
+              defaultValue={task.archiveNote ?? ""}
+              onValueChange={val => saveNote(val || null)}
+              disabled={saving}
+            >
+              <SelectTrigger className="h-6 text-xs py-0 px-2 w-44">
+                <SelectValue placeholder="Select reason…" />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map(r => (
+                  <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setEditing(false)}
+              aria-label="Cancel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : task.archiveNote ? (
+          <div className="flex items-center gap-1 mt-0.5 group/note">
+            <p className="text-xs text-muted-foreground/70 truncate" title={task.archiveNote}>
+              {task.archiveNote}
+            </p>
+            <button
+              className="opacity-0 group-hover/note:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0"
+              onClick={() => setEditing(true)}
+              aria-label="Edit reason"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          </div>
+        ) : (
+          <button
+            className="text-xs text-muted-foreground/40 hover:text-muted-foreground mt-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity"
+            onClick={() => setEditing(true)}
+          >
+            + Add reason
+          </button>
         )}
       </div>
 
