@@ -86,7 +86,7 @@ export async function PATCH(
 
     const task = await prisma.task.findUnique({
       where: { id: taskId },
-      select: { analysisResult: true },
+      select: { analysisResult: true, result: true },
     });
 
     if (!task) {
@@ -96,10 +96,25 @@ export async function PATCH(
     const analysis = task.analysisResult ? JSON.parse(task.analysisResult) : {};
     analysis.candidateInfo = { ...(analysis.candidateInfo || {}), ...candidateInfo };
 
-    await prisma.task.update({
-      where: { id: taskId },
-      data: { analysisResult: JSON.stringify(analysis) },
-    });
+    const updateData: Parameters<typeof prisma.task.update>[0]["data"] = {
+      analysisResult: JSON.stringify(analysis),
+    };
+
+    // Keep candidateName + profile JSON in sync when name is explicitly edited
+    if (typeof candidateInfo.name === "string" && candidateInfo.name.trim()) {
+      const fullName = candidateInfo.name.trim();
+      const parts = fullName.split(/\s+/);
+      updateData.candidateName = fullName;
+      if (task.result) {
+        const profile = JSON.parse(task.result);
+        profile.first_name = parts[0] ?? "";
+        profile.last_name = parts.slice(1).join(" ");
+        if (profile.extractedInfo) profile.extractedInfo.name = fullName;
+        updateData.result = JSON.stringify(profile);
+      }
+    }
+
+    await prisma.task.update({ where: { id: taskId }, data: updateData });
 
     return NextResponse.json({ ok: true, candidateInfo: analysis.candidateInfo });
   } catch (error) {

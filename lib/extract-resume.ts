@@ -178,6 +178,8 @@ function isSectionHeader(s: string): boolean {
 const LINKEDIN_URL_PATTERN = /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/([\w%-]+(?:[\/\-][\w%-]+)*)/i;
 const HEADLINE_PATTERN = /^(.+?)\s+@\s+(.+)$/;
 const TRAILING_AT_PATTERN = /^(.+?)\s+@\s*$/;
+// Juicebox / common resume format: "Role at Company" (greedy first group catches roles that contain "at")
+const HEADLINE_AT_WORD_PATTERN = /^(.+)\s+at\s+([A-Z].+)$/;
 
 // LinkedIn URL may wrap across lines, e.g. "www.linkedin.com/in/naman-\nsuyal-441416258"
 // And sometimes includes query strings or trailing slashes
@@ -198,11 +200,17 @@ interface HeadlineMatch {
   org: string;
 }
 
-// Strongest anchor in LinkedIn PDFs: "Designation @ Company" — single or two-line split.
+// Strongest anchor in LinkedIn/Juicebox PDFs: "Designation @ Company" or "Designation at Company".
+// All searches are capped to the first 20 lines — headlines are always at the top of the PDF.
+// A "@" appearing in the document body (e.g. "In my role @ Company, I ...") is not a headline.
 function findHeadline(lines: string[]): HeadlineMatch | null {
-  for (let i = 0; i < lines.length; i++) {
+  const limit = Math.min(lines.length, 20);
+
+  // Pass 1: LinkedIn "@" separator.
+  for (let i = 0; i < limit; i++) {
     const line = lines[i];
     if (!line || /linkedin\.com/i.test(line)) continue;
+    if (isSectionHeader(line)) break;
 
     // Single-line: "Designation @ Company"
     const m = HEADLINE_PATTERN.exec(line);
@@ -228,6 +236,41 @@ function findHeadline(lines: string[]): HeadlineMatch | null {
       }
     }
   }
+
+  // Pass 2: Juicebox / standard resume "Role at Company" (word-boundary "at").
+  // Company must start with an uppercase letter to reject noise like "expert at building things".
+  // Also handles two-line split: "Role at\n  Company" (Sushmita Mishra format).
+  for (let i = 0; i < limit; i++) {
+    const line = lines[i];
+    if (!line || /linkedin\.com/i.test(line)) continue;
+    if (isSectionHeader(line)) break;
+    if (line.length > 120) continue; // description sentences are longer than headlines
+
+    // Single-line: "Role at Company"
+    const m = HEADLINE_AT_WORD_PATTERN.exec(line);
+    if (m) {
+      return { nameSearchIdx: i, locationSearchIdx: i, designation: m[1].trim(), org: m[2].trim() };
+    }
+
+    // Two-line split: line ends with " at" and company is on the next non-empty line
+    if (/\s+at\s*$/i.test(line)) {
+      const designation = line.replace(/\s+at\s*$/i, "").trim();
+      let nextIdx = i + 1;
+      while (nextIdx < lines.length && !lines[nextIdx]) nextIdx++;
+      if (nextIdx < lines.length) {
+        const nextLine = lines[nextIdx];
+        if (!SECTION_HEADERS.has(nextLine.toLowerCase()) && !DATE_LINE_RE.test(nextLine) && !/linkedin\.com/i.test(nextLine)) {
+          return {
+            nameSearchIdx: i,
+            locationSearchIdx: nextIdx,
+            designation,
+            org: nextLine.trim(),
+          };
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -243,12 +286,13 @@ function findNameBeforeHeadline(lines: string[], headlineIdx: number): string {
   return "";
 }
 
-// Location: first non-empty line after the headline (before the next section header).
+// Location: first non-empty, non-URL line after the headline (before the next section header).
 function findLocationAfterHeadline(lines: string[], headlineIdx: number): string {
   for (let i = headlineIdx + 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line) continue;
     if (isSectionHeader(line)) return "";
+    if (/https?:\/\/|linkedin\.com/i.test(line)) continue; // skip URL lines (Juicebox puts LinkedIn URL here)
     return line;
   }
   return "";

@@ -150,7 +150,9 @@ export async function persistLinkedInResult(args: {
     }
 
     const candidateName =
-      [profileData.first_name, profileData.last_name].filter(Boolean).join(" ") || null;
+      [profileData.first_name, profileData.last_name].filter(Boolean).join(" ") ||
+      analysisResult?.candidateInfo?.name ||
+      null;
 
     await tx.task.update({
       where: { id: taskId },

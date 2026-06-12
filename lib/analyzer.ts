@@ -351,7 +351,7 @@ export const DEFAULT_PROMPT_ENVELOPE: PromptEnvelope = {
   scoringSectionHeader: `SCORING RULES (mutually exclusive pairs: fill ONE, leave other as ""):`,
   responseSchemaTemplate: `Respond with ONLY valid JSON (no markdown, no code fences):
 {
-  "scoring": {
+{resumeNameField}  "scoring": {
 {scoringFields}
   },
   "scoringLogs": {
@@ -795,7 +795,11 @@ export function buildSystemPrompt(
     .map((r) => `    "${r.key}": "${r.logFormat}"`)
     .join(",\n");
 
+  const resumeNameField = resumeMode
+    ? '  "name": "<candidate\'s full name exactly as written in the resume>",\n'
+    : "";
   const jsonBlock = envelope.responseSchemaTemplate
+    .replace("{resumeNameField}", resumeNameField)
     .replace("{scoringFields}", scoringFields)
     .replace("{scoringLogsFields}", logsFields);
 
@@ -960,7 +964,7 @@ export async function analyzeProfile(
 
   // ── Pass 1: Deterministic pre-extraction ──
   const isResumeMode = !!profileData?.resumeText;
-  const candidateInfo = extractCandidateInfo(profileData);
+  let candidateInfo = extractCandidateInfo(profileData);
   const careerStats = computeCareerStats(profileData.work_experience || []);
 
   // Pre-compute stability + location as a fallback (authoritative for LinkedIn scrapes).
@@ -1055,6 +1059,16 @@ export async function analyzeProfile(
   } catch {
     console.error("[Analyzer] Failed to parse AI response:", content);
     throw new Error("AI returned invalid JSON. Please retry.");
+  }
+
+  // Resume mode: the regex extractor only understands LinkedIn PDF headers so it
+  // falls back to the source filename for other formats. Override with the LLM
+  // extraction if it returned a plausible name.
+  if (isResumeMode) {
+    const llmName = typeof llmResult.name === "string" ? llmResult.name.trim() : "";
+    if (llmName && !/^(unknown|n\/a|not found|not available)$/i.test(llmName)) {
+      candidateInfo = { ...candidateInfo, name: llmName };
+    }
   }
 
   // ── Pass 3: Merge deterministic + LLM ──

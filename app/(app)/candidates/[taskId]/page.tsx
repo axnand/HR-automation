@@ -215,6 +215,9 @@ export default function CandidateDetailPage() {
   const [reevaluating, setReevaluating] = useState(false);
   const [reevalResult, setReevalResult] = useState<{ delta: number; from: number; to: number } | null>(null);
   const [reevalError, setReevalError] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     fetch("/api/airscale/credits")
@@ -291,6 +294,40 @@ export default function CandidateDetailPage() {
     } catch {
       alert("Failed to update candidate info");
       refreshTask(); // Revert on failure
+    }
+  }
+
+  async function saveName() {
+    const trimmed = nameInput.trim();
+    if (!trimmed) { setEditingName(false); return; }
+    setSavingName(true);
+    // Optimistic update — patch all three local name sources so the header refreshes instantly
+    setTask(prev => {
+      if (!prev) return prev;
+      const parts = trimmed.split(/\s+/);
+      const newResult = prev.result
+        ? { ...prev.result, first_name: parts[0] ?? "", last_name: parts.slice(1).join(" "),
+            extractedInfo: prev.result.extractedInfo ? { ...prev.result.extractedInfo, name: trimmed } : prev.result.extractedInfo }
+        : prev.result;
+      return {
+        ...prev,
+        result: newResult,
+        analysisResult: { ...prev.analysisResult, candidateInfo: { ...(prev.analysisResult?.candidateInfo ?? {}), name: trimmed } },
+      };
+    });
+    setEditingName(false);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidateInfo: { name: trimmed } }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+    } catch {
+      alert("Failed to update name");
+      refreshTask();
+    } finally {
+      setSavingName(false);
     }
   }
 
@@ -424,7 +461,28 @@ export default function CandidateDetailPage() {
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-foreground tracking-tight">{name}</h1>
+              {editingName ? (
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={e => setNameInput(e.target.value)}
+                  onBlur={saveName}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") { e.preventDefault(); saveName(); }
+                    if (e.key === "Escape") { setNameInput(""); setEditingName(false); }
+                  }}
+                  disabled={savingName}
+                  className="text-xl font-bold bg-background border border-primary/50 ring-2 ring-primary/20 outline-none rounded px-2 py-0.5 text-foreground tracking-tight min-w-[200px]"
+                />
+              ) : (
+                <button
+                  onClick={() => { setNameInput(name); setEditingName(true); }}
+                  className="group flex items-center gap-1.5 hover:bg-muted/30 rounded px-1 -mx-1 transition-colors"
+                >
+                  <h1 className="text-xl font-bold text-foreground tracking-tight">{name}</h1>
+                  <Pencil className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity shrink-0 text-muted-foreground" />
+                </button>
+              )}
               {analysis?.recommendation && (
                 <Badge variant="outline" className={cn("text-xs font-semibold px-2.5 py-0.5", recommendationStyle)}>
                   {analysis.recommendation}
