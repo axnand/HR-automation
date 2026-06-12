@@ -1,6 +1,6 @@
 /**
  * Backfill InterviewSession.accessToken for rows created before the column
- * existed (migration 20260601000007_phase3_interview_delivery). The capability
+ * existed (migration 20260612000002_phase3_interview_delivery). The capability
  * token is the candidate URL segment (/interview/<accessToken>); new rows get
  * one at creation time, this fills the Phase-1 legacy rows.
  *
