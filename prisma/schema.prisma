@@ -256,6 +256,7 @@ model Task {
   overrides        ScoreOverride[]
   duplicatesAsA    DuplicatePair[]   @relation("DuplicatePairA")
   duplicatesAsB    DuplicatePair[]   @relation("DuplicatePairB")
+  interviewSessions InterviewSession[]
 
   @@index([jobId])
   @@index([accountId])
@@ -266,6 +267,82 @@ model Task {
   // Index supporting the "needs review" recruiter query
   // (jobId + analysisStatus = FAILED).
   @@index([jobId, analysisStatus])
+}
+
+// AI interview session for a candidate (Task). 1 Task : many sessions
+// (re-interviews allowed). See docs/interview-flow.md.
+//
+// NOTE: the public candidate link uses the high-entropy `accessToken` capability
+// token (/interview/<accessToken>) — added in Phase 3 alongside the standalone
+// route (docs/interview-flow.md §9). The cuid `id` and `roomId` are never the
+// public URL (`roomId` is never exposed to the browser at all). `sentVia`/`sentAt`
+// record Phase-3 delivery; `questionsSnapshot` is reserved for Phase 2/5 — we
+// snapshot the exact questions asked so later edits to the role's question set
+// don't change how a past interview is scored.
+model InterviewSession {
+  id                String                 @id @default(cuid())
+  taskId            String
+  task              Task                   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  roomId            String                 @unique // "interview_<uuid>" sent to SCAI; correlates to SCAI roomName
+  callId            String? // SCAI "RM_xxx", backfilled post-call (Phase 4)
+
+  status            InterviewSessionStatus @default(PENDING)
+  sentVia           InterviewSentVia? // Phase 3 — which channel delivered the link (null until sent)
+
+  // Capability token for the candidate URL: /interview/<accessToken>. High-entropy
+  // (crypto.randomBytes(32).base64url), NOT the cuid `id` and NOT `roomId`.
+  // Nullable for legacy rows until scripts/backfill-interview-access-token.ts runs;
+  // generated at creation for every new row. See docs/interview-flow.md §9.
+  accessToken       String?                @unique
+  expiresAt         DateTime? // link expiry — column lands in Phase 3; enforcement is a fast-follow (§9)
+
+  questionsSnapshot Json? // exact questions asked (Phase 2) — frozen at creation
+  transcript        Json? // fetched post-call (Phase 4)
+  analysis          Json? // structured scorecard (Phase 5)
+  score             Float? // denormalized overall score, for sorting/filtering
+  recommendation    String? // PROCEED | HOLD | REJECT
+
+  sentAt            DateTime? // Phase 3 — when the interview link was delivered to the candidate
+  startedAt         DateTime? // candidate joined the room
+  endedAt           DateTime? // candidate disconnected
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([taskId])
+  @@index([status])
+}
+
+enum InterviewSessionStatus {
+  PENDING // created, not yet joined
+  SENT // link delivered to candidate (Phase 3)
+  IN_PROGRESS // candidate joined the room
+  COMPLETED // call ended (+ transcript fetched in Phase 4)
+  ANALYZED // AI scoring done (Phase 5)
+  EXPIRED // link expired without a completed interview
+  FAILED // token / dispatch / transcript error
+}
+
+// How a Phase-3 interview link reached the candidate. LINK_ONLY = no open
+// channel was sendable, so the link was minted for manual copy-paste only.
+enum InterviewSentVia {
+  LINKEDIN
+  EMAIL
+  WHATSAPP
+  LINK_ONLY
+}
+
+// Org-wide interview defaults (singleton, mirrors the AppSettings pattern).
+// Introduced in Phase 3 for the global delivery message template; Phase 2 added
+// globalQuestions / defaultAgentName. Per-role overrides live in
+// Requisition.config.interview.* (no migration). A code-level default
+// (lib/interview/templates.ts) applies whenever defaultMessageTemplate is empty.
+model InterviewConfig {
+  id                     String   @id @default("global") // single row
+  defaultMessageTemplate Json     @default("{}") // { subject?: string, body: string } — body must contain {{interviewLink}}
+  globalQuestions        Json     @default("[]") // [{ id, order, text, mustAsk, idealAnswer, weight }]
+  defaultAgentName       String   @default("HR-Recruiter-Agent")
+  updatedAt              DateTime @updatedAt
 }
 
 model DuplicatePair {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Briefcase, Building2, ExternalLink, MoreHorizontal, Send, Loader2, MessageSquare } from "lucide-react";
+import { Briefcase, Building2, ExternalLink, MoreHorizontal, Send, Loader2, MessageSquare, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +54,8 @@ interface Props {
   showCheckbox?: boolean;
   isStarred?: boolean;
   onStar?: (taskId: string) => void;
+  /** Opens the single-send interview composer for this candidate (REPLIED CTA). */
+  onSendInterview?: (taskId: string) => void;
 }
 
 function getInitials(name: string) {
@@ -97,10 +99,14 @@ export function CandidateKanbanCard({
   showCheckbox = false,
   isStarred = false,
   onStar,
+  onSendInterview,
 }: Props) {
   const [sendingInvite, setSendingInvite] = useState(false);
   const [sendingDm, setSendingDm] = useState(false);
   const name = task.name || "Unknown";
+  // Interview link already delivered? Derived from the timeline (OutreachMessage
+  // channel "<CHANNEL>_INTERVIEW") the send primitive writes — no extra fetch.
+  const interviewSent = (task.outreachMessages ?? []).some(m => m.channel?.includes("INTERVIEW"));
   const gradient = pickGradient(name);
   const moveTargets = PIPELINE_STAGES.filter(s => s !== task.stage);
 
@@ -348,6 +354,27 @@ export function CandidateKanbanCard({
             )}
             {sendingDm ? "Sending…" : "Send DM"}
           </Button>
+        )}
+
+        {/* Replied CTA — the natural moment to send an interview link. */}
+        {task.stage === "REPLIED" && onSendInterview && (
+          <Button
+            size="sm"
+            variant={interviewSent ? "outline" : "default"}
+            className="mt-2.5 w-full h-7 text-xs gap-1.5"
+            onClick={e => { e.stopPropagation(); onSendInterview(task.id); }}
+          >
+            <Video className="h-3 w-3" />
+            {interviewSent ? "Resend interview link" : "Send interview link"}
+          </Button>
+        )}
+
+        {/* Interview-sent indicator (any stage once a link has gone out). */}
+        {interviewSent && task.stage !== "REPLIED" && (
+          <div className="mt-2 flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+            <Video className="h-3 w-3" />
+            Interview link sent
+          </div>
         )}
       </div>
     </div>

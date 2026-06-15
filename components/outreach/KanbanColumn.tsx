@@ -21,6 +21,7 @@ interface Props {
   readonly showCheckboxes: boolean;
   readonly starredIds?: Set<string>;
   readonly onStar?: (taskId: string) => void;
+  readonly onSendInterview?: (taskId: string) => void;
 }
 
 export function KanbanColumn({
@@ -38,6 +39,7 @@ export function KanbanColumn({
   showCheckboxes,
   starredIds,
   onStar,
+  onSendInterview,
 }: Props) {
   const [isOver, setIsOver] = useState(false);
   const checkboxRef = useRef<HTMLInputElement>(null);
@@ -137,6 +139,7 @@ export function KanbanColumn({
                 showCheckbox={showCheckboxes || someSelected}
                 isStarred={starredIds?.has(task.id) ?? false}
                 onStar={onStar}
+                onSendInterview={onSendInterview}
               />
             ))
           )}

@@ -1,6 +1,7 @@
 import { startBoss, stopBoss, getBoss } from "@/lib/queue";
 import { handleLinkedInJobs, handleResumeJobs } from "@/lib/workers/task-handlers";
 import { runOutreachTick } from "@/lib/channels/outreach-tick";
+import { runInterviewTranscriptTick } from "@/lib/interview/transcript-tick";
 
 async function main() {
   console.log("[Worker] Starting...");
@@ -38,6 +39,21 @@ async function main() {
       tickRunning = false;
     }
   }, 30_000);
+
+  // ── Interview transcript tick: poll SCAI for completed calls every 60s ───────
+  // Advisory-locked in runInterviewTranscriptTick — safe across worker + cron.
+  let transcriptTickRunning = false;
+  setInterval(async () => {
+    if (transcriptTickRunning) return;
+    transcriptTickRunning = true;
+    try {
+      await runInterviewTranscriptTick();
+    } catch (err: any) {
+      console.error("[Worker] Interview transcript tick error:", err.message);
+    } finally {
+      transcriptTickRunning = false;
+    }
+  }, 60_000);
 
   // Log queue depth every 60 seconds
   setInterval(async () => {

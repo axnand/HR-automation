@@ -10,6 +10,7 @@ const VARS: TemplateVars = {
   role: "Engineer",
   score: "85%",
   reason: "",
+  interviewLink: "https://example.com/interview/abc",
 };
 
 describe("renderTemplate — canonical camelCase tokens", () => {
@@ -35,6 +36,12 @@ describe("renderTemplate — canonical camelCase tokens", () => {
 
   it("replaces {{score}}", () => {
     expect(renderTemplate("Score: {{score}}", VARS)).toBe("Score: 85%");
+  });
+
+  it("replaces {{interviewLink}}", () => {
+    expect(renderTemplate("Link: {{interviewLink}}", VARS)).toBe(
+      "Link: https://example.com/interview/abc"
+    );
   });
 });
 
@@ -63,6 +70,12 @@ describe("renderTemplate — space/casing aliases (the reported bug)", () => {
     expect(renderTemplate("Hi {{full name}}", VARS)).toBe("Hi John Doe");
   });
 
+  it("replaces {{interview link}} (space)", () => {
+    expect(renderTemplate("Link: {{interview link}}", VARS)).toBe(
+      "Link: https://example.com/interview/abc"
+    );
+  });
+
   it("replaces {{ firstName }} (extra whitespace padding)", () => {
     expect(renderTemplate("Hi {{ firstName }}", VARS)).toBe("Hi John");
   });
@@ -89,7 +102,7 @@ describe("renderTemplate — safety guard: unreplaced tokens", () => {
 
   it("does NOT throw when all variables are resolved", () => {
     expect(() =>
-      renderTemplate("Hi {{first name}}, score {{score}}", VARS)
+      renderTemplate("Hi {{first name}}, link: {{interviewLink}}", VARS)
     ).not.toThrow();
   });
 });
@@ -137,5 +150,15 @@ describe("buildVars", () => {
   it("defaults firstName to 'there' when no name data exists", () => {
     const vars = buildVars({}, {});
     expect(vars.firstName).toBe("there");
+  });
+
+  it("sets reason to empty string by default", () => {
+    const vars = buildVars({}, {});
+    expect(vars.reason).toBe("");
+  });
+
+  it("sets interviewLink to empty string by default", () => {
+    const vars = buildVars({}, {});
+    expect(vars.interviewLink).toBe("");
   });
 });

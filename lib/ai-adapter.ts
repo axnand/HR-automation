@@ -21,6 +21,7 @@ export interface ChatMessage {
 export interface ChatCompletionOptions {
   temperature?: number;
   max_tokens?: number;
+  response_format?: { type: "json_object" | "text" };
 }
 
 export interface ChatCompletionResult {
@@ -109,6 +110,7 @@ async function openaiCompatible(
         messages,
         temperature: opts.temperature ?? 0.1,
         max_tokens: opts.max_tokens ?? 2000,
+        ...(opts.response_format ? { response_format: opts.response_format } : {}),
       }),
       signal: AbortSignal.timeout(60000), // 60s timeout for AI requests
     });

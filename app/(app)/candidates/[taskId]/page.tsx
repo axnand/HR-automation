@@ -1370,7 +1370,12 @@ function buildTimeline(
         ts: new Date(msg.sentAt ?? msg.createdAt).getTime(),
       });
     } else if (msg.status === "SENT") {
-      const channel = msg.channel === "LINKEDIN_INVITE" ? "Invite sent" : "Message sent";
+      const channel =
+        msg.channel === "LINKEDIN_INVITE"
+          ? "Invite sent"
+          : msg.channel.endsWith("_INTERVIEW")
+            ? "Interview link sent"
+            : "Message sent";
       items.push({
         type: "message",
         label: channel,

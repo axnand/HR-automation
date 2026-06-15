@@ -1,0 +1,37 @@
+flowchart LR
+    SOURCED([SOURCED])
+    SHORTLISTED([SHORTLISTED])
+    CONTACT_REQUESTED([CONTACT REQUESTED])
+    CONNECTED([CONNECTED])
+    MESSAGED([MESSAGED])
+    REPLIED([REPLIED])
+    INTERVIEW([INTERVIEW])
+    HIRED([HIRED])
+    REJECTED([REJECTED])
+    ARCHIVED([ARCHIVED])
+
+    SOURCED -->|auto-shortlist\nAI score meets threshold| SHORTLISTED
+    SHORTLISTED -->|invite sent| CONTACT_REQUESTED
+    CONTACT_REQUESTED -->|invite accepted| CONNECTED
+    CONNECTED -->|first DM sent| MESSAGED
+    MESSAGED -->|candidate replies| REPLIED
+    REPLIED -->|recruiter moves| INTERVIEW
+    INTERVIEW -->|recruiter moves| HIRED
+    INTERVIEW -->|recruiter moves| REJECTED
+
+    SOURCED -. recruiter .-> ARCHIVED
+    SHORTLISTED -. recruiter .-> ARCHIVED
+    CONTACT_REQUESTED -. invite timeout .-> ARCHIVED
+    MESSAGED -. all followups exhausted .-> ARCHIVED
+    REPLIED -. recruiter .-> ARCHIVED
+
+    style SOURCED fill:#6b7280,color:#fff,stroke:none
+    style SHORTLISTED fill:#3b82f6,color:#fff,stroke:none
+    style CONTACT_REQUESTED fill:#8b5cf6,color:#fff,stroke:none
+    style CONNECTED fill:#0ea5e9,color:#fff,stroke:none
+    style MESSAGED fill:#f59e0b,color:#fff,stroke:none
+    style REPLIED fill:#10b981,color:#fff,stroke:none
+    style INTERVIEW fill:#f97316,color:#fff,stroke:none
+    style HIRED fill:#22c55e,color:#fff,stroke:none
+    style REJECTED fill:#ef4444,color:#fff,stroke:none
+    style ARCHIVED fill:#374151,color:#9ca3af,stroke:none

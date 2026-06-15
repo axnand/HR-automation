@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 /app/generated/prisma
+
+# Claude Code local session config — machine-specific, never commit
+.claude/settings.json

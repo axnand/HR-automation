@@ -629,6 +629,7 @@ export function CandidatesTab({ data, requisitionId, onRefresh, duplicateTaskIds
 function ProfileCard({ task, jobConfig, expanded, onToggle, isDuplicate, onOpenDuplicates, selectMode, isSelected, isStarred, onStar }: { task: TaskResult; jobConfig?: any; expanded: boolean; onToggle: () => void; isDuplicate?: boolean; onOpenDuplicates?: () => void; selectMode?: boolean; isSelected?: boolean; isStarred?: boolean; onStar?: () => void; }) {
   const profile = task.result;
   const analysis = task.analysisResult;
+  const [imgError, setImgError] = useState(false);
   if (!profile && !analysis) return null;
 
   const extracted = profile?.extractedInfo || {};
@@ -653,12 +654,12 @@ function ProfileCard({ task, jobConfig, expanded, onToggle, isDuplicate, onOpenD
         className="w-full text-left p-4 flex items-center gap-4 hover:bg-accent/30 transition-colors cursor-pointer"
       >
         <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-cyan-400 flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0 overflow-hidden">
-          {profile?.profile_picture_url ? (
+          {profile?.profile_picture_url && !imgError ? (
             <img
               src={`/api/proxy-image?url=${encodeURIComponent(profile.profile_picture_url)}`}
               alt={name}
               className="h-full w-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+              onError={() => setImgError(true)}
             />
           ) : (
             (() => {

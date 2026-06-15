@@ -82,12 +82,21 @@ export async function PUT(
       "autoShortlistThreshold",
       "promptRole", "promptGuidelines", "criticalInstructions",
       "builtInRuleDescriptions", "ruleDefinitions", "promptEnvelope",
+      "interview", // Phase 2/3 — interview trigger + question list + messageTemplate
     ];
     const currentConfig = existing.config ? JSON.parse(existing.config) : {};
     let configChanged = false;
     for (const k of CONFIG_KEYS) {
       if (k in body) {
-        currentConfig[k] = body[k];
+        if (k === "interview" && body[k] && typeof body[k] === "object") {
+          // Deep-merge the interview sub-object. It holds independently-edited
+          // keys — `questions`/`trigger` (InterviewTab) and `messageTemplate`
+          // (the per-role delivery template, Phase 3). A wholesale overwrite
+          // would let one editor silently wipe the other's keys.
+          currentConfig.interview = { ...(currentConfig.interview || {}), ...body[k] };
+        } else {
+          currentConfig[k] = body[k];
+        }
         configChanged = true;
       }
     }

@@ -5,8 +5,10 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   RefreshCw, LayoutGrid, Search, X, ExternalLink,
-  ChevronDown, Zap, Trash2, Send, Pencil, Check,
+  ChevronDown, Zap, Trash2, Video, Send, Pencil, Check,
 } from "lucide-react";
+import { SendInterviewDialog } from "@/components/interview/SendInterviewDialog";
+import { BulkSendInterviewDialog } from "@/components/interview/BulkSendInterviewDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -378,6 +380,10 @@ export function PipelineTab({ requisitionId }: Props) {
 
   function clearSelection() { setSelectedIds(new Set()); }
 
+  // Interview send dialogs (single composer for a Replied card; bulk for selection).
+  const [interviewTaskId, setInterviewTaskId] = useState<string | null>(null);
+  const [bulkInterviewOpen, setBulkInterviewOpen] = useState(false);
+
   async function toggleStar(taskId: string) {
     const next = !starredIds.has(taskId);
     setStarredIds(prev => {
@@ -445,6 +451,21 @@ export function PipelineTab({ requisitionId }: Props) {
     }
     return map;
   }, [stages, selectedIds]);
+
+  // Stage-awareness nudge for bulk interview send (#8): interviews make sense for
+  // candidates who've engaged (REPLIED / INTERVIEW). Warn when the selection
+  // includes earlier-stage candidates so the recruiter isn't blindly blasting a
+  // link to people who never replied.
+  const interviewBulkStageNote = useMemo(() => {
+    const ENGAGED = new Set<CandidateStage>(["REPLIED", "INTERVIEW"]);
+    let early = 0;
+    for (const [stage, ids] of Object.entries(selectedByStage)) {
+      if (!ENGAGED.has(stage as CandidateStage)) early += ids?.length ?? 0;
+    }
+    return early > 0
+      ? `${early} of ${selectedIds.size} selected ${early === 1 ? "candidate hasn't" : "candidates haven't"} replied yet — sending an interview link may be premature.`
+      : null;
+  }, [selectedByStage, selectedIds]);
 
   // P1 #47 / EC-11.17 — single bulk endpoint replaces parallel PATCH calls.
   // Server processes each task in its own transaction and returns per-task
@@ -895,6 +916,7 @@ export function PipelineTab({ requisitionId }: Props) {
                 showCheckboxes={showCheckboxes}
                 starredIds={starredIds}
                 onStar={toggleStar}
+                onSendInterview={setInterviewTaskId}
               />
             ))}
           </div>
@@ -1232,6 +1254,16 @@ export function PipelineTab({ requisitionId }: Props) {
             );
           })()}
 
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={() => setBulkInterviewOpen(true)}
+          >
+            <Video className="h-3 w-3" />
+            Send interview link
+          </Button>
+
           {(() => {
             const shortlistedCount = (selectedByStage["SHORTLISTED"] ?? []).length;
             return (
@@ -1271,6 +1303,25 @@ export function PipelineTab({ requisitionId }: Props) {
           </button>
         </div>
       )}
+
+      {/* Single-send composer — opened from a Replied card's CTA. */}
+      <SendInterviewDialog
+        taskId={interviewTaskId ?? ""}
+        requisitionId={requisitionId}
+        open={interviewTaskId !== null}
+        onOpenChange={(o) => { if (!o) setInterviewTaskId(null); }}
+        onSent={() => { setInterviewTaskId(null); fetchPipeline(); }}
+      />
+
+      {/* Bulk send — opened from the floating selection bar. */}
+      <BulkSendInterviewDialog
+        requisitionId={requisitionId}
+        taskIds={[...selectedIds]}
+        open={bulkInterviewOpen}
+        onOpenChange={setBulkInterviewOpen}
+        stageNote={interviewBulkStageNote}
+        onDone={() => { setBulkInterviewOpen(false); clearSelection(); fetchPipeline(); }}
+      />
     </div>
   );
 }
