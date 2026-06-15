@@ -42,17 +42,27 @@ export async function renderInterviewMessage(params: {
 }): Promise<RenderedInterviewMessage> {
   const template = await getEffectiveInterviewTemplate(params.requisitionConfigRaw);
   const hasLinkVar = templateHasLinkVar(template);
-  // In token mode, set interviewLink to the literal token so renderTemplate
-  // replaces {{interviewLink}} with itself — i.e. leaves it intact for display.
-  const interviewLink = params.linkAsToken ? "{{interviewLink}}" : params.link;
+  // In token mode the recruiter's composer must show {{interviewLink}} as an
+  // editable placeholder, but renderTemplate's safety guard throws on any
+  // remaining {{...}} token. Work around it: substitute a unique internal
+  // placeholder that won't match the guard's regex, run renderTemplate, then
+  // swap the placeholder back to the visible token afterwards.
+  const LINK_PLACEHOLDER = "\x02INTERVIEW_LINK_TOKEN\x03"; // non-printable sentinels
+  const interviewLink = params.linkAsToken ? LINK_PLACEHOLDER : params.link;
   const vars = { ...buildVars(params.profile ?? {}, params.analysis ?? {}), interviewLink };
 
-  const body = renderTemplate(template.body, vars);
+  const rawBody = renderTemplate(template.body, vars);
+  const body = params.linkAsToken
+    ? rawBody.replace(LINK_PLACEHOLDER, "{{interviewLink}}")
+    : rawBody;
 
   let subject: string | null = null;
   if (params.forChannel === "EMAIL") {
     const subjTemplate = template.subject ?? DEFAULT_INTERVIEW_TEMPLATE.subject ?? "Interview invitation";
-    subject = renderTemplate(subjTemplate, vars);
+    const rawSubject = renderTemplate(subjTemplate, vars);
+    subject = params.linkAsToken
+      ? rawSubject.replace(LINK_PLACEHOLDER, "{{interviewLink}}")
+      : rawSubject;
   }
 
   return { subject, body, hasLinkVar };
