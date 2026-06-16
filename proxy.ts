@@ -26,10 +26,14 @@ export default auth((req) => {
   const isPublic = PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix));
   if (isPublic) return NextResponse.next();
 
-  // Unauthenticated — redirect to login, preserving the intended destination.
+  // Unauthenticated — redirect to /login.
+  // Only add callbackUrl when the destination is a non-root path worth returning to
+  // (avoids the ugly ?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2F on the root redirect).
   if (!req.auth) {
     const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("callbackUrl", req.url);
+    if (pathname !== "/" && pathname !== "") {
+      loginUrl.searchParams.set("callbackUrl", pathname);
+    }
     return NextResponse.redirect(loginUrl);
   }
 

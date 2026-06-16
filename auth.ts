@@ -45,6 +45,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signIn: "/login",
   },
 
-  // JWT sessions — no DB session table needed.
-  session: { strategy: "jwt" },
+  // JWT sessions stored in a secure HTTP-only cookie — no DB session table needed.
+  // maxAge: 30 days — user stays logged in for a month without re-entering credentials.
+  // updateAge: 24 h — cookie is silently refreshed once per day to extend the expiry,
+  //   so active users never get bumped out mid-day.
+  session: {
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60,   // 30 days in seconds
+    updateAge: 24 * 60 * 60,      // refresh the cookie every 24 h of activity
+  },
 });

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import {
   Users, Cpu, Plus, Pencil, Trash2, Zap, CheckCircle2, XCircle,
-  ChevronLeft, Info, Power, PowerOff, Server, Star, Webhook, RefreshCw, Trash, Video, Check, UserCircle, LogOut,
+  ChevronLeft, Info, Power, PowerOff, Server, Star, Webhook, RefreshCw, Trash, Video, Check, UserCircle, LogOut, Eye, EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,7 +136,32 @@ const PROVIDER_TYPE_LABELS: Record<string, string> = {
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"accounts" | "models" | "webhooks" | "interview" | "profile">("accounts");
+  const [activeTab, setActiveTab] = useState<"accounts" | "models" | "webhooks" | "interview" | "profile" | "users">("accounts");
+
+  // ─── Users tab state (ADMIN only) ───────────────────────────────────────────
+  type UserRow = { id: string; email: string; name: string | null; role: string; createdAt: string };
+  const [usersList, setUsersList] = useState<UserRow[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState("RECRUITER");
+  const [userFormMsg, setUserFormMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUserRole, setEditUserRole] = useState("");
+  const [editUserName, setEditUserName] = useState("");
+  const [editUserPassword, setEditUserPassword] = useState("");
+
+  const fetchUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const res = await fetch("/api/auth/users");
+      if (res.ok) setUsersList((await res.json()).users);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
 
   // ─── Profile tab state ───────────────────────────────────────────────────────
   const { data: session, update: updateSession } = useSession();
@@ -147,6 +172,10 @@ export default function SettingsPage() {
   const [profileConfirmPw, setProfileConfirmPw] = useState("");
   const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [isPendingProfile, startProfileTransition] = useTransition();
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
+  const [showNewUserPw, setShowNewUserPw] = useState(false);
 
   // Seed form from session on mount / session change.
   useEffect(() => {
@@ -697,11 +726,12 @@ export default function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => {
-        const tab = v as "accounts" | "models" | "webhooks" | "interview" | "profile";
+        const tab = v as "accounts" | "models" | "webhooks" | "interview" | "profile" | "users";
         setActiveTab(tab);
         if (tab === "webhooks") fetchWebhooks();
         if (tab === "interview") fetchInterviewCfg();
         if (tab === "profile") setProfileMsg(null);
+        if (tab === "users") fetchUsers();
       }}>
         <TabsList>
           <TabsTrigger value="accounts" className="gap-2">
@@ -1647,171 +1677,459 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ═══════════════ MY ACCOUNT ═══════════════ */}
-        <TabsContent value="profile" className="mt-5 space-y-5 max-w-lg">
-          <Card>
-            <CardContent className="pt-5 space-y-5">
-              <p className="text-xs text-muted-foreground">
-                Signed in as <span className="font-medium text-foreground">{session?.user?.email}</span>
-                {(session?.user as any)?.role && (
-                  <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-muted font-mono uppercase tracking-wide">
-                    {(session?.user as any).role}
-                  </span>
-                )}
-              </p>
-
-              <Separator />
-
-              {/* Name */}
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-name">Display name</Label>
-                <Input
-                  id="profile-name"
-                  value={profileName}
-                  onChange={e => setProfileName(e.target.value)}
-                  placeholder="Your name"
-                  disabled={isPendingProfile}
-                />
+        <TabsContent value="profile" className="mt-5">
+          {/* Header row — identity + sign-out */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <UserCircle className="h-6 w-6 text-primary" />
               </div>
-
-              {/* Email */}
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-email">Email</Label>
-                <Input
-                  id="profile-email"
-                  type="email"
-                  value={profileEmail}
-                  onChange={e => setProfileEmail(e.target.value)}
-                  placeholder="you@salescode.ai"
-                  disabled={isPendingProfile}
-                />
-              </div>
-
-              <Separator />
-
-              {/* Password section */}
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Change password</p>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-current-pw">Current password</Label>
-                <Input
-                  id="profile-current-pw"
-                  type="password"
-                  value={profileCurrentPw}
-                  onChange={e => setProfileCurrentPw(e.target.value)}
-                  placeholder="Required when changing email or password"
-                  disabled={isPendingProfile}
-                  autoComplete="current-password"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-new-pw">New password</Label>
-                <Input
-                  id="profile-new-pw"
-                  type="password"
-                  value={profileNewPw}
-                  onChange={e => setProfileNewPw(e.target.value)}
-                  placeholder="Leave blank to keep current password"
-                  disabled={isPendingProfile}
-                  autoComplete="new-password"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-confirm-pw">Confirm new password</Label>
-                <Input
-                  id="profile-confirm-pw"
-                  type="password"
-                  value={profileConfirmPw}
-                  onChange={e => setProfileConfirmPw(e.target.value)}
-                  placeholder="Repeat new password"
-                  disabled={isPendingProfile}
-                  autoComplete="new-password"
-                />
-              </div>
-
-              {profileMsg && (
-                <p className={cn(
-                  "text-sm font-medium",
-                  profileMsg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
-                )}>
-                  {profileMsg.text}
+              <div>
+                <p className="text-sm font-semibold leading-tight">
+                  {(session?.user as any)?.name || session?.user?.email}
                 </p>
+                <p className="text-xs text-muted-foreground leading-tight">{session?.user?.email}</p>
+              </div>
+              {(session?.user as any)?.role && (
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold uppercase tracking-wide">
+                  {(session?.user as any).role}
+                </span>
               )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 text-muted-foreground hover:text-foreground"
+              onClick={() => signOut({ callbackUrl: "/login" })}
+            >
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </Button>
+          </div>
 
-              <Button
-                className="w-full"
-                disabled={isPendingProfile}
-                onClick={() => {
-                  setProfileMsg(null);
-                  if (profileNewPw && profileNewPw !== profileConfirmPw) {
-                    setProfileMsg({ ok: false, text: "New passwords don't match." });
-                    return;
-                  }
-                  const changingEmail = profileEmail.toLowerCase().trim() !== (session?.user?.email ?? "").toLowerCase();
-                  const changingPassword = !!profileNewPw;
-                  const changingName = profileName.trim() !== ((session?.user as any)?.name ?? "");
+          {/* Two-column grid matching other tabs */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-                  if (!changingEmail && !changingPassword && !changingName) {
-                    setProfileMsg({ ok: false, text: "Nothing has changed." });
-                    return;
-                  }
+            {/* ── Profile info ── */}
+            <Card>
+              <CardContent className="pt-5 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Profile</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Update your display name and email address.</p>
+                </div>
+                <Separator />
 
-                  startProfileTransition(async () => {
-                    const body: Record<string, string> = {};
-                    if (changingName) body.name = profileName.trim();
-                    if (changingEmail) body.email = profileEmail.toLowerCase().trim();
-                    if (changingPassword) {
-                      body.newPassword = profileNewPw;
-                      body.currentPassword = profileCurrentPw;
-                    } else if (changingEmail) {
-                      body.currentPassword = profileCurrentPw;
+                <div className="space-y-1.5">
+                  <Label htmlFor="profile-name">Display name</Label>
+                  <Input
+                    id="profile-name"
+                    value={profileName}
+                    onChange={e => setProfileName(e.target.value)}
+                    placeholder="Your name"
+                    disabled={isPendingProfile}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="profile-email">Email address</Label>
+                  <Input
+                    id="profile-email"
+                    type="email"
+                    value={profileEmail}
+                    onChange={e => setProfileEmail(e.target.value)}
+                    placeholder="you@salescode.ai"
+                    disabled={isPendingProfile}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Changing your email requires your current password and will sign you out.
+                  </p>
+                </div>
+
+                {profileMsg && (
+                  <p className={cn(
+                    "text-sm font-medium",
+                    profileMsg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+                  )}>
+                    {profileMsg.text}
+                  </p>
+                )}
+
+                <Button
+                  className="w-full"
+                  disabled={isPendingProfile}
+                  onClick={() => {
+                    setProfileMsg(null);
+                    if (profileNewPw && profileNewPw !== profileConfirmPw) {
+                      setProfileMsg({ ok: false, text: "New passwords don't match." });
+                      return;
                     }
+                    const changingEmail = profileEmail.toLowerCase().trim() !== (session?.user?.email ?? "").toLowerCase();
+                    const changingPassword = !!profileNewPw;
+                    const changingName = profileName.trim() !== ((session?.user as any)?.name ?? "");
 
-                    const res = await fetch("/api/auth/profile", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(body),
-                    });
-                    const data = await res.json();
-
-                    if (!res.ok) {
-                      setProfileMsg({ ok: false, text: data.error ?? "Update failed." });
+                    if (!changingEmail && !changingPassword && !changingName) {
+                      setProfileMsg({ ok: false, text: "Nothing has changed." });
                       return;
                     }
 
-                    // Update the Next-Auth session token so the UI reflects the new name immediately.
-                    await updateSession({ name: data.user.name });
+                    startProfileTransition(async () => {
+                      const body: Record<string, string> = {};
+                      if (changingName) body.name = profileName.trim();
+                      if (changingEmail) body.email = profileEmail.toLowerCase().trim();
+                      if (changingPassword) {
+                        body.newPassword = profileNewPw;
+                        body.currentPassword = profileCurrentPw;
+                      } else if (changingEmail) {
+                        body.currentPassword = profileCurrentPw;
+                      }
 
-                    setProfileCurrentPw("");
-                    setProfileNewPw("");
-                    setProfileConfirmPw("");
+                      const res = await fetch("/api/auth/profile", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body),
+                      });
+                      const data = await res.json();
 
-                    if (data.requiresRelogin) {
-                      setProfileMsg({ ok: true, text: "Saved. Signing you out so the new credentials take effect…" });
-                      setTimeout(() => signOut({ callbackUrl: "/login" }), 2000);
-                    } else {
-                      setProfileMsg({ ok: true, text: "Profile updated." });
+                      if (!res.ok) {
+                        setProfileMsg({ ok: false, text: data.error ?? "Update failed." });
+                        return;
+                      }
+
+                      await updateSession({ name: data.user.name });
+                      setProfileCurrentPw("");
+                      setProfileNewPw("");
+                      setProfileConfirmPw("");
+
+                      if (data.requiresRelogin) {
+                        setProfileMsg({ ok: true, text: "Saved. Signing you out so the new credentials take effect…" });
+                        setTimeout(() => signOut({ callbackUrl: "/login" }), 2000);
+                      } else {
+                        setProfileMsg({ ok: true, text: "Profile updated." });
+                      }
+                    });
+                  }}
+                >
+                  {isPendingProfile ? "Saving…" : "Save changes"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* ── Change password ── */}
+            <Card>
+              <CardContent className="pt-5 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Change password</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Use a strong password with at least 8 characters.
+                  </p>
+                </div>
+                <Separator />
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="profile-current-pw">Current password</Label>
+                  <div className="relative">
+                    <Input id="profile-current-pw" type={showCurrentPw ? "text" : "password"} value={profileCurrentPw} onChange={e => setProfileCurrentPw(e.target.value)} placeholder="Enter your current password" disabled={isPendingProfile} autoComplete="current-password" className="pr-9" />
+                    <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowCurrentPw(v => !v)} tabIndex={-1}>{showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="profile-new-pw">New password</Label>
+                  <div className="relative">
+                    <Input id="profile-new-pw" type={showNewPw ? "text" : "password"} value={profileNewPw} onChange={e => setProfileNewPw(e.target.value)} placeholder="Min. 8 characters" disabled={isPendingProfile} autoComplete="new-password" className="pr-9" />
+                    <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowNewPw(v => !v)} tabIndex={-1}>{showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="profile-confirm-pw">Confirm new password</Label>
+                  <div className="relative">
+                    <Input id="profile-confirm-pw" type={showConfirmPw ? "text" : "password"} value={profileConfirmPw} onChange={e => setProfileConfirmPw(e.target.value)} placeholder="Repeat new password" disabled={isPendingProfile} autoComplete="new-password" className="pr-9" />
+                    <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1}>{showConfirmPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                  </div>
+                </div>
+
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  disabled={isPendingProfile || !profileCurrentPw || !profileNewPw || !profileConfirmPw}
+                  onClick={() => {
+                    setProfileMsg(null);
+                    if (profileNewPw !== profileConfirmPw) {
+                      setProfileMsg({ ok: false, text: "New passwords don't match." });
+                      return;
                     }
-                  });
-                }}
-              >
-                {isPendingProfile ? "Saving…" : "Save changes"}
-              </Button>
+                    startProfileTransition(async () => {
+                      const res = await fetch("/api/auth/profile", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ currentPassword: profileCurrentPw, newPassword: profileNewPw }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) {
+                        setProfileMsg({ ok: false, text: data.error ?? "Update failed." });
+                        return;
+                      }
+                      setProfileCurrentPw("");
+                      setProfileNewPw("");
+                      setProfileConfirmPw("");
+                      setProfileMsg({ ok: true, text: "Password updated. Signing you out…" });
+                      setTimeout(() => signOut({ callbackUrl: "/login" }), 2000);
+                    });
+                  }}
+                >
+                  {isPendingProfile ? "Updating…" : "Update password"}
+                </Button>
+              </CardContent>
+            </Card>
 
-              <Separator />
+          </div>
 
-              <Button
-                variant="outline"
-                className="w-full gap-2 text-muted-foreground hover:text-foreground"
-                onClick={() => signOut({ callbackUrl: "/login" })}
-              >
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </Button>
-            </CardContent>
-          </Card>
+          {/* ── Team management (ADMIN only) ── */}
+          {(session?.user as any)?.role === "ADMIN" && (
+          <div className="mt-5 space-y-3">
+            <div>
+              <p className="text-sm font-semibold">Team management</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Only admins can see and manage team members.</p>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+            {/* ── User list ── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">Team members</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{usersList.length} user{usersList.length !== 1 ? "s" : ""}</p>
+                </div>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={fetchUsers} disabled={usersLoading}>
+                  <RefreshCw className={cn("h-3.5 w-3.5", usersLoading && "animate-spin")} />
+                  Refresh
+                </Button>
+              </div>
+
+              {usersLoading ? (
+                <div className="space-y-2">
+                  {[1,2,3].map(i => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}
+                </div>
+              ) : usersList.length === 0 ? (
+                <div className="flex items-center justify-center h-32 rounded-xl border-2 border-dashed border-border/40 text-sm text-muted-foreground">
+                  No users yet
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {usersList.map(u => (
+                    <Card key={u.id} className={cn(editingUserId === u.id && "ring-2 ring-primary/30")}>
+                      <CardContent className="py-3 px-4">
+                        {editingUserId === u.id ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={editUserName}
+                                onChange={e => setEditUserName(e.target.value)}
+                                placeholder="Display name"
+                                className="h-8 text-sm flex-1"
+                              />
+                              <select
+                                value={editUserRole}
+                                onChange={e => setEditUserRole(e.target.value)}
+                                className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                              >
+                                <option value="RECRUITER">RECRUITER</option>
+                                <option value="ADMIN">ADMIN</option>
+                                <option value="VIEWER">VIEWER</option>
+                              </select>
+                            </div>
+                            <Input
+                              type="password"
+                              value={editUserPassword}
+                              onChange={e => setEditUserPassword(e.target.value)}
+                              placeholder="New password (leave blank to keep current)"
+                              className="h-8 text-sm"
+                            />
+                            <div className="flex gap-2 pt-1">
+                              <Button size="sm" className="h-7 text-xs gap-1" onClick={async () => {
+                                const body: Record<string, string> = { name: editUserName, role: editUserRole };
+                                if (editUserPassword) body.password = editUserPassword;
+                                const res = await fetch(`/api/auth/users/${u.id}`, {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify(body),
+                                });
+                                if (res.ok) { setEditingUserId(null); setEditUserPassword(""); fetchUsers(); }
+                                else {
+                                  const d = await res.json();
+                                  setUserFormMsg({ ok: false, text: d.error ?? "Update failed." });
+                                }
+                              }}>
+                                <Check className="h-3 w-3" /> Save
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setEditingUserId(null); setEditUserPassword(""); }}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-xs font-bold text-primary">
+                              {(u.name || u.email).slice(0, 1).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{u.name || <span className="text-muted-foreground italic">No name</span>}</p>
+                              <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                            </div>
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0",
+                              u.role === "ADMIN" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
+                              u.role === "VIEWER" ? "bg-muted text-muted-foreground" :
+                              "bg-primary/10 text-primary"
+                            )}>
+                              {u.role}
+                            </span>
+                            <button
+                              className="h-7 w-7 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground hover:bg-muted"
+                              onClick={() => { setEditingUserId(u.id); setEditUserRole(u.role); setEditUserName(u.name ?? ""); setEditUserPassword(""); }}
+                              title="Edit"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              title="Delete user"
+                              onClick={async () => {
+                                if (!confirm(`Delete ${u.email}? This cannot be undone.`)) return;
+                                const res = await fetch(`/api/auth/users/${u.id}`, { method: "DELETE" });
+                                if (res.ok) fetchUsers();
+                                else {
+                                  const d = await res.json();
+                                  setUserFormMsg({ ok: false, text: d.error ?? "Delete failed." });
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Add new user ── */}
+            <Card>
+              <CardContent className="pt-5 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Add team member</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">New users can sign in immediately after creation.</p>
+                </div>
+                <Separator />
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-user-name">Full name</Label>
+                  <Input
+                    id="new-user-name"
+                    value={newUserName}
+                    onChange={e => setNewUserName(e.target.value)}
+                    placeholder="Jane Smith"
+                    disabled={creatingUser}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-user-email">Email address</Label>
+                  <Input
+                    id="new-user-email"
+                    type="email"
+                    value={newUserEmail}
+                    onChange={e => setNewUserEmail(e.target.value)}
+                    placeholder="jane@salescode.ai"
+                    disabled={creatingUser}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-user-password">Password</Label>
+                  <div className="relative">
+                    <Input id="new-user-password" type={showNewUserPw ? "text" : "password"} value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Min. 8 characters" disabled={creatingUser} className="pr-9" />
+                    <button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowNewUserPw(v => !v)} tabIndex={-1}>{showNewUserPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-user-role">Role</Label>
+                  <select
+                    id="new-user-role"
+                    value={newUserRole}
+                    onChange={e => setNewUserRole(e.target.value)}
+                    disabled={creatingUser}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                  >
+                    <option value="RECRUITER">Recruiter — can manage jobs, candidates, outreach</option>
+                    <option value="ADMIN">Admin — can manage users + all Recruiter access</option>
+                    <option value="VIEWER">Viewer — read-only (future)</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    {newUserRole === "ADMIN" && "Full access including user management."}
+                    {newUserRole === "RECRUITER" && "Standard recruiter access — cannot manage team members."}
+                    {newUserRole === "VIEWER" && "Read-only access. Active in a future release."}
+                  </p>
+                </div>
+
+                {userFormMsg && (
+                  <p className={cn(
+                    "text-sm font-medium",
+                    userFormMsg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+                  )}>
+                    {userFormMsg.text}
+                  </p>
+                )}
+
+                <Button
+                  className="w-full gap-2"
+                  disabled={creatingUser || !newUserEmail || !newUserPassword}
+                  onClick={async () => {
+                    setUserFormMsg(null);
+                    setCreatingUser(true);
+                    try {
+                      const res = await fetch("/api/auth/users", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          email: newUserEmail,
+                          name: newUserName,
+                          password: newUserPassword,
+                          role: newUserRole,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) {
+                        setUserFormMsg({ ok: false, text: data.error ?? "Failed to create user." });
+                        return;
+                      }
+                      setUserFormMsg({ ok: true, text: `${data.user.email} added successfully.` });
+                      setNewUserEmail("");
+                      setNewUserName("");
+                      setNewUserPassword("");
+                      setNewUserRole("RECRUITER");
+                      fetchUsers();
+                    } finally {
+                      setCreatingUser(false);
+                    }
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  {creatingUser ? "Creating…" : "Create user"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            </div>
+          </div>
+          )}
+
         </TabsContent>
+
       </Tabs>
     </div>
   );
