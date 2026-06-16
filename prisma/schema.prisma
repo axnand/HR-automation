@@ -649,23 +649,16 @@ model ScoreOverride {
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 //
 // Internal recruiter accounts. Passwords are bcrypt-hashed (cost 12).
-// role is designed for future RBAC — enforce in API route middleware once
-// per-role restrictions are defined. For now only ADMIN can create users.
-//
-// Next-Auth v5 (Credentials provider) reads from this table.
-
-enum UserRole {
-  ADMIN
-  RECRUITER
-  VIEWER
-}
+// role is a free-text String (not an enum) so new roles can be created from
+// the UI without schema migrations. Built-in values: ADMIN, RECRUITER, VIEWER.
+// Only ADMIN is special-cased in code (user management access).
 
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
   name         String?
   passwordHash String
-  role         UserRole @default(RECRUITER)
+  role         String   @default("RECRUITER")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

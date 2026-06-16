@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { hash } from "bcryptjs";
-import { UserRole } from "@prisma/client";
 
 const BCRYPT_COST = 12;
 
@@ -37,9 +36,8 @@ export async function POST(req: NextRequest) {
   const email = body.email?.toLowerCase().trim();
   const password = body.password;
   const name = body.name?.trim() || null;
-  const roleRaw = body.role?.toUpperCase();
-  const role: UserRole = (roleRaw === "ADMIN" || roleRaw === "RECRUITER" || roleRaw === "VIEWER")
-    ? roleRaw : "RECRUITER";
+  // role is free-text — any non-empty string is valid; default to RECRUITER
+  const role = body.role?.trim().toUpperCase() || "RECRUITER";
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });

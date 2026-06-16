@@ -1929,15 +1929,18 @@ export default function SettingsPage() {
                                 placeholder="Display name"
                                 className="h-8 text-sm flex-1"
                               />
-                              <select
+                              <Input
                                 value={editUserRole}
-                                onChange={e => setEditUserRole(e.target.value)}
-                                className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                              >
-                                <option value="RECRUITER">RECRUITER</option>
-                                <option value="ADMIN">ADMIN</option>
-                                <option value="VIEWER">VIEWER</option>
-                              </select>
+                                onChange={e => setEditUserRole(e.target.value.toUpperCase())}
+                                placeholder="Role (e.g. RECRUITER)"
+                                className="h-8 text-sm w-36"
+                                list="role-suggestions"
+                              />
+                              <datalist id="role-suggestions">
+                                <option value="RECRUITER" />
+                                <option value="ADMIN" />
+                                <option value="VIEWER" />
+                              </datalist>
                             </div>
                             <Input
                               type="password"
@@ -2058,21 +2061,29 @@ export default function SettingsPage() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="new-user-role">Role</Label>
-                  <select
+                  <Input
                     id="new-user-role"
                     value={newUserRole}
-                    onChange={e => setNewUserRole(e.target.value)}
+                    onChange={e => setNewUserRole(e.target.value.toUpperCase())}
+                    placeholder="e.g. RECRUITER"
                     disabled={creatingUser}
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-                  >
-                    <option value="RECRUITER">Recruiter — can manage jobs, candidates, outreach</option>
-                    <option value="ADMIN">Admin — can manage users + all Recruiter access</option>
-                    <option value="VIEWER">Viewer — read-only (future)</option>
-                  </select>
+                    list="new-role-suggestions"
+                  />
+                  <datalist id="new-role-suggestions">
+                    <option value="RECRUITER" />
+                    <option value="ADMIN" />
+                    <option value="VIEWER" />
+                  </datalist>
                   <p className="text-xs text-muted-foreground">
-                    {newUserRole === "ADMIN" && "Full access including user management."}
-                    {newUserRole === "RECRUITER" && "Standard recruiter access — cannot manage team members."}
-                    {newUserRole === "VIEWER" && "Read-only access. Active in a future release."}
+                    {newUserRole === "ADMIN"
+                      ? "Full access including user management."
+                      : newUserRole === "RECRUITER"
+                      ? "Standard recruiter access."
+                      : newUserRole === "VIEWER"
+                      ? "Read-only access (future)."
+                      : newUserRole
+                      ? `Custom role "${newUserRole}" — you can enforce this in code later.`
+                      : "Type a role or pick from suggestions."}
                   </p>
                 </div>
 

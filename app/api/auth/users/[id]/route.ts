@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { hash } from "bcryptjs";
-import { UserRole } from "@prisma/client";
 
 const BCRYPT_COST = 12;
 
@@ -28,12 +27,11 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) data.name = body.name.trim() || null;
 
+  // role is free-text — accept any non-empty string
   if (body.role) {
-    const r = body.role.toUpperCase();
-    if (r !== "ADMIN" && r !== "RECRUITER" && r !== "VIEWER") {
-      return NextResponse.json({ error: "Invalid role." }, { status: 400 });
-    }
-    data.role = r as UserRole;
+    const r = body.role.trim().toUpperCase();
+    if (!r) return NextResponse.json({ error: "Role cannot be empty." }, { status: 400 });
+    data.role = r;
   }
 
   if (body.password) {
@@ -66,7 +64,6 @@ export async function DELETE(
 
   const { id } = await params;
 
-  // Prevent self-deletion
   const me = await prisma.user.findUnique({ where: { email: session.user.email! } });
   if (me?.id === id) {
     return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400 });
