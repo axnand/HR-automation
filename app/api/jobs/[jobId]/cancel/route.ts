@@ -81,10 +81,16 @@ export async function POST(
       );
     }
 
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { status: "CANCELLED" },
-    });
+    await prisma.$transaction([
+      prisma.job.update({
+        where: { id: jobId },
+        data: { status: "CANCELLED" },
+      }),
+      prisma.task.updateMany({
+        where: { jobId, status: { in: ["PENDING", "PROCESSING"] } },
+        data: { status: "FAILED", errorMessage: "Job was cancelled" },
+      }),
+    ]);
 
     return NextResponse.json({
       message: "Job cancelled successfully",

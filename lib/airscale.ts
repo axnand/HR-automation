@@ -54,18 +54,21 @@ export async function findPersonalEmail(linkedinUrl: string): Promise<string | n
   return data.email ?? null;
 }
 
-/** Mobile phone number via POST /v1/phone — returns first number in array */
+/** Mobile phone number via POST /v1/phone */
 export async function findPhone(linkedinUrl: string): Promise<string | null> {
   const data = await post("/v1/phone", { linkedin_profile_url: linkedinUrl });
-  const nums: string[] = data.phone_numbers ?? [];
-  return nums[0] ?? null;
+  // API returns either a string or an array depending on the provider
+  const raw = data.phone_numbers;
+  if (!raw) return null;
+  return Array.isArray(raw) ? (raw[0] ?? null) : String(raw);
 }
 
 /** Remaining credit balance via POST /v1/credits */
 export async function getCreditBalance(): Promise<number | null> {
   try {
     const data = await post("/v1/credits", {});
-    const n = parseInt(data.credits, 10);
+    // Response shape: { status, response: { credits: number } }
+    const n = parseInt(data.response?.credits ?? data.credits, 10);
     return isNaN(n) ? null : n;
   } catch {
     return null;
