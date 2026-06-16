@@ -16,20 +16,28 @@ export class AirscaleError extends Error {
 
 // ─── Internal fetch helper ────────────────────────────────────────────────────
 
-async function post(path: string, body: Record<string, unknown>): Promise<any> {
+async function post(path: string, body: Record<string, unknown>, timeoutMs = 30000): Promise<any> {
   const apiKey = process.env.AIRSCALE_API_KEY;
   if (!apiKey) throw new AirscaleError("AIRSCALE_API_KEY is not configured");
 
-  const res = await fetch(`https://api.airscale.io${path}`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Accept":        "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`https://api.airscale.io${path}`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Accept":        "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err: any) {
+    if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+      throw new AirscaleError("Airscale request timed out", 504);
+    }
+    throw err;
+  }
 
   if (res.status === 402) throw new AirscaleError("Airscale credit limit reached", 402);
   if (res.status === 429) throw new AirscaleError("Airscale rate limit exceeded", 429);
@@ -56,7 +64,7 @@ export async function findPersonalEmail(linkedinUrl: string): Promise<string | n
 
 /** Mobile phone number via POST /v1/phone */
 export async function findPhone(linkedinUrl: string): Promise<string | null> {
-  const data = await post("/v1/phone", { linkedin_profile_url: linkedinUrl });
+  const data = await post("/v1/phone", { linkedin_profile_url: linkedinUrl }, 60000);
   // API returns either a string or an array depending on the provider
   const raw = data.phone_numbers;
   if (!raw) return null;

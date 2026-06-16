@@ -65,7 +65,8 @@ export async function POST(
     return NextResponse.json({ ok: true, contact });
   } catch (err: any) {
     if (err instanceof AirscaleError) {
-      return NextResponse.json({ ok: false, error: err.message }, { status: err.statusCode === 402 ? 402 : 500 });
+      const status = err.statusCode === 402 ? 402 : err.statusCode === 504 ? 504 : 500;
+      return NextResponse.json({ ok: false, error: err.message }, { status });
     }
     console.error("[Enrich] Error:", err.message);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
