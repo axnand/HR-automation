@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useTransition } from "react";
 import Link from "next/link";
+import { signOut, useSession } from "next-auth/react";
 import {
   Users, Cpu, Plus, Pencil, Trash2, Zap, CheckCircle2, XCircle,
-  ChevronLeft, Info, Power, PowerOff, Server, Star, Webhook, RefreshCw, Trash, Video, Check,
+  ChevronLeft, Info, Power, PowerOff, Server, Star, Webhook, RefreshCw, Trash, Video, Check, UserCircle, LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,7 +136,25 @@ const PROVIDER_TYPE_LABELS: Record<string, string> = {
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"accounts" | "models" | "webhooks" | "interview">("accounts");
+  const [activeTab, setActiveTab] = useState<"accounts" | "models" | "webhooks" | "interview" | "profile">("accounts");
+
+  // ─── Profile tab state ───────────────────────────────────────────────────────
+  const { data: session, update: updateSession } = useSession();
+  const [profileName, setProfileName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profileCurrentPw, setProfileCurrentPw] = useState("");
+  const [profileNewPw, setProfileNewPw] = useState("");
+  const [profileConfirmPw, setProfileConfirmPw] = useState("");
+  const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isPendingProfile, startProfileTransition] = useTransition();
+
+  // Seed form from session on mount / session change.
+  useEffect(() => {
+    if (session?.user) {
+      setProfileName((session.user as any).name ?? "");
+      setProfileEmail(session.user.email ?? "");
+    }
+  }, [session]);
 
   // ── Interview config state ──
   const [interviewCfg, setInterviewCfg] = useState<{
@@ -678,10 +697,11 @@ export default function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => {
-        const tab = v as "accounts" | "models" | "webhooks" | "interview";
+        const tab = v as "accounts" | "models" | "webhooks" | "interview" | "profile";
         setActiveTab(tab);
         if (tab === "webhooks") fetchWebhooks();
         if (tab === "interview") fetchInterviewCfg();
+        if (tab === "profile") setProfileMsg(null);
       }}>
         <TabsList>
           <TabsTrigger value="accounts" className="gap-2">
@@ -699,6 +719,10 @@ export default function SettingsPage() {
           <TabsTrigger value="interview" className="gap-2">
             <Video className="h-4 w-4" />
             Interview
+          </TabsTrigger>
+          <TabsTrigger value="profile" className="gap-2">
+            <UserCircle className="h-4 w-4" />
+            My Account
           </TabsTrigger>
         </TabsList>
 
@@ -1618,6 +1642,173 @@ export default function SettingsPage() {
                   </span>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ═══════════════ MY ACCOUNT ═══════════════ */}
+        <TabsContent value="profile" className="mt-5 space-y-5 max-w-lg">
+          <Card>
+            <CardContent className="pt-5 space-y-5">
+              <p className="text-xs text-muted-foreground">
+                Signed in as <span className="font-medium text-foreground">{session?.user?.email}</span>
+                {(session?.user as any)?.role && (
+                  <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-muted font-mono uppercase tracking-wide">
+                    {(session?.user as any).role}
+                  </span>
+                )}
+              </p>
+
+              <Separator />
+
+              {/* Name */}
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-name">Display name</Label>
+                <Input
+                  id="profile-name"
+                  value={profileName}
+                  onChange={e => setProfileName(e.target.value)}
+                  placeholder="Your name"
+                  disabled={isPendingProfile}
+                />
+              </div>
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-email">Email</Label>
+                <Input
+                  id="profile-email"
+                  type="email"
+                  value={profileEmail}
+                  onChange={e => setProfileEmail(e.target.value)}
+                  placeholder="you@salescode.ai"
+                  disabled={isPendingProfile}
+                />
+              </div>
+
+              <Separator />
+
+              {/* Password section */}
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Change password</p>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-current-pw">Current password</Label>
+                <Input
+                  id="profile-current-pw"
+                  type="password"
+                  value={profileCurrentPw}
+                  onChange={e => setProfileCurrentPw(e.target.value)}
+                  placeholder="Required when changing email or password"
+                  disabled={isPendingProfile}
+                  autoComplete="current-password"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-new-pw">New password</Label>
+                <Input
+                  id="profile-new-pw"
+                  type="password"
+                  value={profileNewPw}
+                  onChange={e => setProfileNewPw(e.target.value)}
+                  placeholder="Leave blank to keep current password"
+                  disabled={isPendingProfile}
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-confirm-pw">Confirm new password</Label>
+                <Input
+                  id="profile-confirm-pw"
+                  type="password"
+                  value={profileConfirmPw}
+                  onChange={e => setProfileConfirmPw(e.target.value)}
+                  placeholder="Repeat new password"
+                  disabled={isPendingProfile}
+                  autoComplete="new-password"
+                />
+              </div>
+
+              {profileMsg && (
+                <p className={cn(
+                  "text-sm font-medium",
+                  profileMsg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+                )}>
+                  {profileMsg.text}
+                </p>
+              )}
+
+              <Button
+                className="w-full"
+                disabled={isPendingProfile}
+                onClick={() => {
+                  setProfileMsg(null);
+                  if (profileNewPw && profileNewPw !== profileConfirmPw) {
+                    setProfileMsg({ ok: false, text: "New passwords don't match." });
+                    return;
+                  }
+                  const changingEmail = profileEmail.toLowerCase().trim() !== (session?.user?.email ?? "").toLowerCase();
+                  const changingPassword = !!profileNewPw;
+                  const changingName = profileName.trim() !== ((session?.user as any)?.name ?? "");
+
+                  if (!changingEmail && !changingPassword && !changingName) {
+                    setProfileMsg({ ok: false, text: "Nothing has changed." });
+                    return;
+                  }
+
+                  startProfileTransition(async () => {
+                    const body: Record<string, string> = {};
+                    if (changingName) body.name = profileName.trim();
+                    if (changingEmail) body.email = profileEmail.toLowerCase().trim();
+                    if (changingPassword) {
+                      body.newPassword = profileNewPw;
+                      body.currentPassword = profileCurrentPw;
+                    } else if (changingEmail) {
+                      body.currentPassword = profileCurrentPw;
+                    }
+
+                    const res = await fetch("/api/auth/profile", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    });
+                    const data = await res.json();
+
+                    if (!res.ok) {
+                      setProfileMsg({ ok: false, text: data.error ?? "Update failed." });
+                      return;
+                    }
+
+                    // Update the Next-Auth session token so the UI reflects the new name immediately.
+                    await updateSession({ name: data.user.name });
+
+                    setProfileCurrentPw("");
+                    setProfileNewPw("");
+                    setProfileConfirmPw("");
+
+                    if (data.requiresRelogin) {
+                      setProfileMsg({ ok: true, text: "Saved. Signing you out so the new credentials take effect…" });
+                      setTimeout(() => signOut({ callbackUrl: "/login" }), 2000);
+                    } else {
+                      setProfileMsg({ ok: true, text: "Profile updated." });
+                    }
+                  });
+                }}
+              >
+                {isPendingProfile ? "Saving…" : "Save changes"}
+              </Button>
+
+              <Separator />
+
+              <Button
+                variant="outline"
+                className="w-full gap-2 text-muted-foreground hover:text-foreground"
+                onClick={() => signOut({ callbackUrl: "/login" })}
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
