@@ -36,7 +36,7 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await req.json();
-    const { name, accountId, dsn, apiKey, status } = body;
+    const { name, accountId, dsn, apiKey, status, dailyLimit } = body;
 
     const existing = await prisma.account.findUnique({ where: { id } });
     if (!existing) {
@@ -51,6 +51,9 @@ export async function PUT(
     if (apiKey !== undefined) updateData.apiKey = apiKey;
     if (status !== undefined && ["ACTIVE", "DISABLED"].includes(status)) {
       updateData.status = status;
+    }
+    if (dailyLimit !== undefined) {
+      updateData.dailyLimit = dailyLimit === null ? null : Math.max(1, Math.min(500, Number(dailyLimit)));
     }
 
     const updated = await prisma.account.update({

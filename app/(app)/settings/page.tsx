@@ -59,6 +59,7 @@ interface Account {
   status: string;
   requestCount: number;
   dailyCount: number;
+  dailyLimit: number | null;
   dailyResetAt: string | null;
   cooldownUntil: string | null;
   lastUsedAt: string | null;
@@ -406,6 +407,7 @@ export default function SettingsPage() {
   const [editDsn, setEditDsn] = useState("");
   const [editApiKey, setEditApiKey] = useState("");
   const [editAccountId, setEditAccountId] = useState("");
+  const [editDailyLimit, setEditDailyLimit] = useState<string>("");
 
   // ── Providers state ──
   const [aiProviders, setAiProviders] = useState<AiProvider[]>([]);
@@ -527,6 +529,8 @@ export default function SettingsPage() {
     try {
       const update: any = { name: editName, dsn: editDsn, accountId: editAccountId };
       if (editApiKey && !editApiKey.includes("•")) update.apiKey = editApiKey;
+      const parsed = parseInt(editDailyLimit, 10);
+      update.dailyLimit = editDailyLimit.trim() === "" ? null : (isNaN(parsed) ? null : parsed);
       await fetch(`/api/accounts/${id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
@@ -539,6 +543,7 @@ export default function SettingsPage() {
     setEditingId(account.id); setEditName(account.name); setEditDsn(account.dsn);
     setEditApiKey(account.apiKey.length > 14 ? `••••••••${account.apiKey.slice(-4)}` : account.apiKey);
     setEditAccountId(account.accountId);
+    setEditDailyLimit(account.dailyLimit != null ? String(account.dailyLimit) : "");
   }
 
   // ── Provider helpers ──
@@ -901,6 +906,18 @@ export default function SettingsPage() {
                           </div>
                           <Input type="url" value={editDsn} onChange={e => setEditDsn(e.target.value)} placeholder="DSN Endpoint" className="h-8 text-xs" />
                           <Input value={editApiKey} onChange={e => setEditApiKey(e.target.value)} placeholder="API Key (leave masked to keep)" className="h-8 text-xs font-mono" />
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={1}
+                              max={500}
+                              value={editDailyLimit}
+                              onChange={e => setEditDailyLimit(e.target.value)}
+                              placeholder={`Daily limit (default 150)`}
+                              className="h-8 text-xs w-48"
+                            />
+                            <span className="text-[11px] text-muted-foreground">requests/day — leave blank to use default</span>
+                          </div>
                           <div className="flex justify-end gap-2">
                             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditingId(null)}>Cancel</Button>
                             <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500" onClick={() => handleSaveEdit(account.id)}>Save</Button>
@@ -928,7 +945,7 @@ export default function SettingsPage() {
                             </div>
                             <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground mt-1">
                               <span>Requests: <span className="font-mono font-medium text-foreground/80">{account.requestCount}</span></span>
-                              <span>Today: <span className="font-mono font-medium text-foreground/80">{account.dailyCount}</span></span>
+                              <span>Today: <span className="font-mono font-medium text-foreground/80">{account.dailyCount} / {account.dailyLimit ?? 150}</span></span>
                               {account.lastUsedAt && (
                                 <span>Last used: {new Date(account.lastUsedAt).toLocaleTimeString()}</span>
                               )}
@@ -942,7 +959,7 @@ export default function SettingsPage() {
                                   <span>InMail credits: <span className="font-mono font-medium text-foreground/80">{account.inmailBalance.premium}</span></span>
                                 )}
                                 {account.inmailBalance.recruiter != null && (
-                                  <span>Recruiter: <span className="font-mono font-medium text-foreground/80">{account.inmailBalance.recruiter}</span></span>
+                                  <span>Recruiter InMails: <span className="font-mono font-medium text-foreground/80">{account.inmailBalance.recruiter}</span></span>
                                 )}
                                 {account.inmailBalance.salesNavigator != null && (
                                   <span>Sales Nav: <span className="font-mono font-medium text-foreground/80">{account.inmailBalance.salesNavigator}</span></span>

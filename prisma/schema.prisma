@@ -137,6 +137,7 @@ model Account {
   warmupUntil     DateTime?
   minuteCount     Int                  @default(0) // requests in current minute window
   minuteResetAt   DateTime? // when the current minute window expires
+  dailyLimit      Int? // per-account override; null = use CONFIG.DAILY_SAFE_LIMIT
   cooldownUntil   DateTime? // null = not in cooldown
   // EC-9.6 — soft delete. Deleted accounts are excluded from selection but
   // referenced rows (channels, threads, messages) keep the FK so historical

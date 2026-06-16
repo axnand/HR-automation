@@ -44,12 +44,13 @@ export async function acquireAccounts(count: number = 1, type: AccountType = Acc
   await resetExpiredWindows();
 
   const now = new Date();
-  const candidates = await prisma.account.findMany({
+  const candidates = (await prisma.account.findMany({
     where: {
       type,
       status: "ACTIVE",
       // EC-9.6 — exclude soft-deleted accounts from the pool.
       deletedAt: null,
+      // Use global cap as upper bound; per-account dailyLimit filtered below.
       dailyCount: { lt: CONFIG.DAILY_SAFE_LIMIT },
       minuteCount: { lt: CONFIG.MAX_REQUESTS_PER_MINUTE },
       OR: [
@@ -61,8 +62,8 @@ export async function acquireAccounts(count: number = 1, type: AccountType = Acc
       { dailyCount: "asc" },
       { lastUsedAt: "asc" },
     ],
-    take: count + 5, // extra candidates for optimistic locking failures
-  });
+    take: (count + 5) * 3, // extra headroom so per-account filter leaves enough candidates
+  })).filter(a => a.dailyCount < (a.dailyLimit ?? CONFIG.DAILY_SAFE_LIMIT));
 
   const acquired: Account[] = [];
   for (const candidate of candidates) {
@@ -203,6 +204,7 @@ export async function getAccountStats() {
       status: true,
       requestCount: true,
       dailyCount: true,
+      dailyLimit: true,
       dailyResetAt: true,
       minuteCount: true,
       minuteResetAt: true,

@@ -3,7 +3,7 @@ import { prisma } from "./prisma";
 export const CONFIG = {
   // Rate limiting per account
   MAX_REQUESTS_PER_MINUTE: 10,
-  DAILY_SAFE_LIMIT: 100,
+  DAILY_SAFE_LIMIT: 150,
   // P1 #27 / EC-13.6 — LinkedIn weekly invite limit (~100/week per account).
   // Tracked separately from daily so a recruiter sending 80 Mon + 30 Tue
   // doesn't get 429s on Tuesday despite under-daily.
