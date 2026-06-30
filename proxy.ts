@@ -1,5 +1,10 @@
-import { auth } from "@/auth";
+// import { auth } from "@/auth";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+
+// Auth is currently disabled — all routes are public.
+// To re-enable login protection, uncomment the import above, restore the
+// `export default auth(...)` wrapper below, and uncomment the redirect block.
 
 // Routes that must remain public — no session required.
 //
@@ -10,35 +15,39 @@ import { NextResponse } from "next/server";
 // /api/health        — uptime probe
 // /api/auth/*        — Auth.js sign-in / sign-out / session endpoints
 // /login             — the sign-in page itself
-const PUBLIC_PREFIXES = [
-  "/interview/",
-  "/api/interview/",
-  "/api/webhooks/",
-  "/api/cron/",
-  "/api/health",
-  "/api/auth/",
-  "/login",
-];
+// const PUBLIC_PREFIXES = [
+//   "/interview/",
+//   "/api/interview/",
+//   "/api/webhooks/",
+//   "/api/cron/",
+//   "/api/health",
+//   "/api/auth/",
+//   "/login",
+// ];
 
-export default auth((req) => {
-  const { pathname } = req.nextUrl;
-
-  const isPublic = PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix));
-  if (isPublic) return NextResponse.next();
-
-  // Unauthenticated — redirect to /login.
-  // Only add callbackUrl when the destination is a non-root path worth returning to
-  // (avoids the ugly ?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2F on the root redirect).
-  if (!req.auth) {
-    const loginUrl = new URL("/login", req.url);
-    if (pathname !== "/" && pathname !== "") {
-      loginUrl.searchParams.set("callbackUrl", pathname);
-    }
-    return NextResponse.redirect(loginUrl);
-  }
-
+export default function middleware(_req: NextRequest) {
   return NextResponse.next();
-});
+}
+
+// export default auth((req) => {
+//   const { pathname } = req.nextUrl;
+//
+//   const isPublic = PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix));
+//   if (isPublic) return NextResponse.next();
+//
+//   // Unauthenticated — redirect to /login.
+//   // Only add callbackUrl when the destination is a non-root path worth returning to
+//   // (avoids the ugly ?callbackUrl=http%3A%2F%2Flocalhost%3A3000%2F on the root redirect).
+//   if (!req.auth) {
+//     const loginUrl = new URL("/login", req.url);
+//     if (pathname !== "/" && pathname !== "") {
+//       loginUrl.searchParams.set("callbackUrl", pathname);
+//     }
+//     return NextResponse.redirect(loginUrl);
+//   }
+//
+//   return NextResponse.next();
+// });
 
 export const config = {
   // Run on every route except Next.js internals and static assets.
